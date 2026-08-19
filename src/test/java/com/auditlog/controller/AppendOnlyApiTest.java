@@ -17,7 +17,9 @@ class AppendOnlyApiTest {
 
     @Test
     void controllersExposeNoMutationEndpoints() {
-        for (Class<?> controller : new Class<?>[]{AuditEventController.class, AuditVerifyController.class}) {
+        for (Class<?> controller : new Class<?>[]{
+                AuditEventController.class, AuditVerifyController.class, RedactionController.class,
+                com.auditlog.security.DevAuthController.class}) {
             for (Method method : controller.getDeclaredMethods()) {
                 assertThat(method.getAnnotation(PutMapping.class))
                         .as(controller.getSimpleName() + "." + method.getName() + " must not be a PUT mapping")

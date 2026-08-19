@@ -6,6 +6,7 @@ import com.auditlog.dto.ViolationDetail;
 import com.auditlog.entity.AuditRecordEntity;
 import com.auditlog.exception.ForbiddenException;
 import com.auditlog.hash.HashChainService;
+import com.auditlog.redaction.RedactionCommitmentService;
 import com.auditlog.repository.AuditRecordRepository;
 import com.auditlog.security.AuditSecurityContext;
 import com.auditlog.security.AuthenticatedPrincipal;
@@ -22,16 +23,24 @@ import java.util.List;
  * deleting the newest record(s) from the tail is NOT detectable here, since there is nothing
  * after the deleted tail to reveal a broken link. That requires an external chain-head anchor,
  * which is out of scope for Phase 1.
+ *
+ * Milestone 8: record_hash alone cannot catch a raw payload value being tampered without also
+ * updating its commitment, since record_hash is computed from field_commitments, not the raw
+ * payload (docs/DECISIONS.md ADR-003). RedactionCommitmentService.verifyFieldCommitments()
+ * closes that gap by independently reconciling payload against field_commitments per record.
  */
 @Service
 public class ChainVerificationService {
 
     private final AuditRecordRepository auditRecordRepository;
     private final HashChainService hashChainService;
+    private final RedactionCommitmentService redactionCommitmentService;
 
-    public ChainVerificationService(AuditRecordRepository auditRecordRepository, HashChainService hashChainService) {
+    public ChainVerificationService(AuditRecordRepository auditRecordRepository, HashChainService hashChainService,
+                                     RedactionCommitmentService redactionCommitmentService) {
         this.auditRecordRepository = auditRecordRepository;
         this.hashChainService = hashChainService;
+        this.redactionCommitmentService = redactionCommitmentService;
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +84,11 @@ public class ChainVerificationService {
                         ViolationType.MISSING_RECORD,
                         "Expected sequence_no " + expectedSequenceNo + " but found " + record.getSequenceNo()
                                 + " -- one or more records appear to be missing"));
+            }
+
+            for (String problem : redactionCommitmentService.verifyFieldCommitments(record)) {
+                violations.add(new ViolationDetail(record.getSequenceNo(), record.getId().toString(),
+                        ViolationType.CONTENT_MISMATCH, problem));
             }
 
             previous = record;

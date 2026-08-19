@@ -61,14 +61,16 @@ Records older than a configurable window are archivable or soft-deletable.
 - Records older than the window can be transitioned to an archived state.
 - `GET /audit/verify` handles archived records correctly and does **not** report a false-positive break for records that were legitimately archived per policy.
 
-### FR-B2 — Structured Redaction
+### FR-B2 — Structured Redaction — IMPLEMENTED, TESTED (Milestone 8, 2026-08-20)
 Certain fields within a record's `payload` (e.g., account numbers, personal identifiers) must be redactable to satisfy data privacy requirements, without breaking the hash chain.
 
 **Acceptance criteria**
-- A redaction operation on a flagged field replaces the sensitive value such that the original value is no longer present in the stored payload.
-- `GET /audit/verify` continues to treat the redacted record as valid (does not report it as tampered) after redaction.
-- `GET /audit/verify` still detects genuine tampering of a redacted record (e.g., a further, unauthorized change to the redacted record).
-- The chosen approach, its trade-offs, and its limitations are documented (see `ARCHITECTURE.md` and `DECISIONS.md`) — the assignment explicitly calls this out as "a genuine engineering problem," not a checkbox.
+- A redaction operation on a flagged field replaces the sensitive value such that the original value is no longer present in the stored payload. — TESTED (`RedactionTest.redactingAFieldReplacesItWithATombstoneAndSetsStatus`)
+- `GET /audit/verify` continues to treat the redacted record as valid (does not report it as tampered) after redaction. — TESTED (`RedactionTest.verificationStillSucceedsAfterALegitimateRedaction`)
+- `GET /audit/verify` still detects genuine tampering of a redacted record (e.g., a further, unauthorized change to the redacted record). — TESTED (`RedactionTest.verifyDetectsAForgedTombstoneOnAnAlreadyRedactedField`, `.verifyDetectsRawPayloadTamperedWithoutUpdatingCommitment`)
+- The chosen approach, its trade-offs, and its limitations are documented (see `ARCHITECTURE.md` and `DECISIONS.md`) — the assignment explicitly calls this out as "a genuine engineering problem," not a checkbox. — DOCUMENTED (`docs/DECISIONS.md` ADR-003, expanded with the implementation's verification-gap reasoning and validated test list)
+
+Scope note: only top-level `payload` fields are redactable in this implementation; nested object/array field redaction is out of scope (documented limitation, `ADR-003`). Redaction is tenant-authorized the same way query/fetch are (`ADR-012`) — this also closes `docs/EVALUATION_CLOSURE_MATRIX.md` items 3/21 for the redaction endpoint specifically.
 
 ### FR-B3 — Bulk Export
 Provide an endpoint to export all records for a given `resourceId` or `actorId` as a self-contained, verifiable bundle, including enough chain metadata for a recipient to independently verify that the records it contains have not been altered since export.

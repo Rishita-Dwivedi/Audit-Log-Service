@@ -5,10 +5,12 @@ import com.auditlog.dto.AuditEventResponse;
 import com.auditlog.entity.AuditRecordEntity;
 import com.auditlog.entity.ChainHeadEntity;
 import com.auditlog.hash.HashChainService;
+import com.auditlog.redaction.RedactionCommitmentService;
 import com.auditlog.repository.AuditRecordRepository;
 import com.auditlog.repository.ChainHeadRepository;
 import com.auditlog.security.AuditSecurityContext;
 import com.auditlog.security.AuthenticatedPrincipal;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,13 +23,16 @@ public class AuditEventService {
     private final AuditRecordRepository auditRecordRepository;
     private final ChainHeadRepository chainHeadRepository;
     private final HashChainService hashChainService;
+    private final RedactionCommitmentService redactionCommitmentService;
 
     public AuditEventService(AuditRecordRepository auditRecordRepository,
                               ChainHeadRepository chainHeadRepository,
-                              HashChainService hashChainService) {
+                              HashChainService hashChainService,
+                              RedactionCommitmentService redactionCommitmentService) {
         this.auditRecordRepository = auditRecordRepository;
         this.chainHeadRepository = chainHeadRepository;
         this.hashChainService = hashChainService;
+        this.redactionCommitmentService = redactionCommitmentService;
     }
 
     /**
@@ -65,14 +70,23 @@ public class AuditEventService {
         // sub-second precision.
         OffsetDateTime eventTimestamp = request.timestamp().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         OffsetDateTime recordedAt = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+
+        // Field commitments, not the raw payload, feed the hash (docs/DECISIONS.md ADR-003) --
+        // this is what lets a field be redacted later without invalidating record_hash. Every
+        // top-level payload field gets a commitment, not just ones a caller flags as sensitive:
+        // there is no API surface for pre-declaring which fields are redactable, so any field
+        // can be redacted later (docs/redaction scope: top-level fields only).
+        String salt = redactionCommitmentService.generateSalt();
+        JsonNode fieldCommitments = redactionCommitmentService.computeCommitments(request.payload(), salt);
+
         String recordHash = hashChainService.computeRecordHash(
                 tenantId, request.eventType(), request.actorId(), request.resourceType(), request.resourceId(),
-                request.payload(), eventTimestamp, nextSequenceNo, previousHash);
+                fieldCommitments, eventTimestamp, nextSequenceNo, previousHash);
 
         AuditRecordEntity entity = new AuditRecordEntity(
                 UUID.randomUUID(), nextSequenceNo, tenantId, request.eventType(), request.actorId(),
                 request.resourceType(), request.resourceId(), request.payload(),
-                eventTimestamp, recordedAt, recordHash, previousHash);
+                eventTimestamp, recordedAt, recordHash, previousHash, salt, fieldCommitments);
 
         auditRecordRepository.save(entity);
         head.advance(nextSequenceNo, recordHash);

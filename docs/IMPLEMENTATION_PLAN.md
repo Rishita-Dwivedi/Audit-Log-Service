@@ -41,6 +41,26 @@ Tracks actual implementation progress, phase by phase, against the plan in `docs
 
 **Not done in this milestone:** authorization for redaction/export/compliance endpoints (they don't exist yet — will follow this same pattern in Milestones 8-10); request/body limits, CORS, secret management, TLS, immutable DB permissions, operational monitoring (closure-matrix items 5-10, deferred to the later "Security + negative testing" milestone).
 
+## Milestone 8 — Redaction / commitments — COMPLETE (2026-08-20)
+
+**Scope:** structured redaction per `docs/DECISIONS.md` ADR-003 (`FR-B2`), extending the tenant-authorization pattern from Milestone 7 to the new redact endpoint.
+
+**What was built:**
+- `RedactionCommitmentService` (`com.auditlog.redaction`): per-field salted commitments computed for every top-level payload field at write time, tombstone formatting/parsing, and `verifyFieldCommitments()` -- the reconciliation step that catches a raw-payload tamper `record_hash` alone can't see (since `record_hash` is now computed from commitments, not raw payload).
+- `HashChainService.computeRecordHash()` changed to take `field_commitments` instead of `payload` -- the core mechanism that lets redaction not invalidate `record_hash`.
+- `V3__add_redaction_columns.sql`: `salt`, `field_commitments`, `status`, `redacted_fields`, `redacted_at`, `redacted_by`.
+- `AuditRecordEntity.applyRedaction()` -- the one deliberate, narrowly-scoped exception to entity immutability (`ADR-010`).
+- `RedactionService`/`RedactionController` (`POST /audit/events/{id}/redact`), tenant-authorized the same way as query/fetch (`ADR-012`): same tenant or `AUDITOR`, 404 for cross-tenant, idempotent re-redaction.
+- `ChainVerificationService` now also runs `verifyFieldCommitments()` per record.
+- `AuditEventResponse` gains `status`/`redactedFields`; deliberately does **not** expose `salt`/`fieldCommitments` (would enable offline brute-forcing of low-entropy redacted values).
+- 16 new tests: `RedactionCommitmentServiceTest` (9, unit), `RedactionTest` (7, integration). Total: 59 tests, all passing.
+
+**No new bugs found this milestone** -- the careful design pass (working out the verification-gap problem on paper before coding) paid off; all 16 new tests passed on the first `mvn test` run.
+
+**Evidence:** `mvn test` → `Tests run: 59, Failures: 0, Errors: 0` (BUILD SUCCESS). Live run: wrote an event with an `accountNumber` field, redacted it, confirmed `recordHash` identical before/after in the raw JSON responses, `/audit/verify` still reported `chainIntact: true`.
+
+**Not done in this milestone:** nested-field redaction (documented scope limitation, `ADR-003`); retention/archival, export, compliance (Milestones 9-10); the remaining closure-matrix P0/P1 items (JaCoCo, request limits, CORS, secrets, TLS, DB permissions, fault-injection tests, reproducible CI evidence -- Milestones 11-12).
+
 ## Remaining milestones — NOT STARTED
 
-Per your roadmap, in order: Redaction/commitments (Milestone 8) → Retention/export (Milestone 9) → Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestone 7 above.
+Per your roadmap, in order: Retention/export (Milestone 9) → Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-8 above.

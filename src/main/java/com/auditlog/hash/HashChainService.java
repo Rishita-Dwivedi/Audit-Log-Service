@@ -4,15 +4,18 @@ import com.auditlog.entity.AuditRecordEntity;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
 
 /**
  * The single place in the codebase that computes or verifies a record hash. Every write and
  * every verification pass routes through this class -- nothing else derives a hash
  * independently (docs/ARCHITECTURE.md, "Architecture principle").
+ *
+ * IMPORTANT (Milestone 8, docs/DECISIONS.md ADR-003): the hash is computed over each field's
+ * per-field commitment, NOT the raw payload value. This is what lets a field be redacted later
+ * (its raw value replaced with a tombstone) without invalidating record_hash -- the hash never
+ * depended on the raw value directly, only on a commitment that survives redaction unchanged.
+ * See com.auditlog.redaction.RedactionCommitmentService for how commitments are computed.
  */
 @Service
 public class HashChainService {
@@ -27,47 +30,33 @@ public class HashChainService {
     }
 
     public String genesisHash() {
-        return sha256Hex(GENESIS_SEED);
+        return Sha256.hex(GENESIS_SEED);
     }
 
     public String computeRecordHash(String tenantId, String eventType, String actorId, String resourceType,
-                                     String resourceId, JsonNode payload, OffsetDateTime eventTimestamp,
+                                     String resourceId, JsonNode fieldCommitments, OffsetDateTime eventTimestamp,
                                      long sequenceNo, String previousHash) {
-        String canonicalPayload = payloadCanonicalizer.canonicalize(payload);
+        String canonicalCommitments = payloadCanonicalizer.canonicalize(fieldCommitments);
         String canonicalString = String.join("|",
                 nullToEmpty(tenantId),
                 nullToEmpty(eventType),
                 nullToEmpty(actorId),
                 nullToEmpty(resourceType),
                 nullToEmpty(resourceId),
-                canonicalPayload,
+                canonicalCommitments,
                 eventTimestamp.toInstant().toString(),
                 Long.toString(sequenceNo),
                 nullToEmpty(previousHash));
-        return sha256Hex(canonicalString);
+        return Sha256.hex(canonicalString);
     }
 
     public String computeRecordHash(AuditRecordEntity record) {
         return computeRecordHash(record.getTenantId(), record.getEventType(), record.getActorId(),
-                record.getResourceType(), record.getResourceId(), record.getPayload(), record.getEventTimestamp(),
-                record.getSequenceNo(), record.getPreviousHash());
+                record.getResourceType(), record.getResourceId(), record.getFieldCommitments(),
+                record.getEventTimestamp(), record.getSequenceNo(), record.getPreviousHash());
     }
 
     private String nullToEmpty(String value) {
         return value == null ? "" : value;
-    }
-
-    private String sha256Hex(String input) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hash.length * 2);
-            for (byte b : hash) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 not available", e);
-        }
     }
 }

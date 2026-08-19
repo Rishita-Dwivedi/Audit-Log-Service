@@ -148,3 +148,21 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human approval:** Pending as of this entry.
 
 **Git commit:** See `git log` — Milestone 7 commit follows this entry's own commit.
+
+---
+
+## [2026-08-20] Milestone 8: redaction / commitments
+
+**Prompt intent:** Continue the roadmap (redaction next), keep committing at each meaningful step, keep tracking against `docs/EVALUATION_CLOSURE_MATRIX.md`.
+
+**AI output:** Implemented the field-commitment scheme already documented (but not yet built) in `docs/DECISIONS.md` ADR-003 from Phase 1 planning. The critical design realization, worked out on paper before writing code: `HashChainService` must hash **field commitments**, not the raw payload -- if it hashed the raw payload, redaction (replacing a raw value with a tombstone) would always change the hash, defeating the entire point. Once `record_hash` depends only on commitments (which never change through redaction), redaction becomes safe -- but this also means `record_hash` alone can no longer catch someone tampering a raw payload value directly without updating its commitment, since `record_hash` doesn't touch raw payload anymore. `RedactionCommitmentService.verifyFieldCommitments()` was built specifically to close that self-created gap: it independently reconciles current payload against stored commitments per record. This reasoning is recorded in `docs/DECISIONS.md` ADR-003 (expanded), not just implemented silently.
+
+**Also decided:** every top-level payload field gets a commitment unconditionally at write time, rather than requiring callers to pre-declare which fields are "redactable" -- simpler API, no risk of forgetting to flag a field. And `salt`/`fieldCommitments` are never serialized into any API response, since exposing them would let a caller brute-force a redacted value offline for any low-entropy value space by recomputing the commitment for every candidate guess.
+
+**Human decision:** The engineer set the milestone order and process; the AI made the field-commitment-not-raw-payload design call and the "commit every field unconditionally" and "never expose salt/commitments" calls, recording rationale and alternatives in ADR-003 for review. Not yet reviewed line-by-line as of this entry.
+
+**Validation performed:** `mvn test` → `Tests run: 59, Failures: 0, Errors: 0` (BUILD SUCCESS) -- all 16 new tests (`RedactionCommitmentServiceTest`, `RedactionTest`) passed on the first run, no bugs found this milestone, unlike Milestones 1 and 7. Live run: `recordHash` confirmed byte-identical before and after redacting a field via `curl`; `/audit/verify` still reported `chainIntact: true` afterward.
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log` — Milestone 8 commit follows this entry's own commit.

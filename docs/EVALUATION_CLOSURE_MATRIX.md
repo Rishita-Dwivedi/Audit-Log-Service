@@ -32,7 +32,7 @@ No application code has been written as part of producing this document. No item
 |---|---|---|---|---|
 | 1 | ATT-01 | Delivery commit identifiability | P0 | Open — Not Started |
 | 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Open — Not Started |
-| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance -- not built yet) |
+| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance -- not built yet) |
 | 4 | SEC-06 | Replay/idempotency protection | P1 | Open — Not Started |
 | 5 | SEC-06 | Global request/body limits | P1 | Open — Not Started |
 | 6 | SEC-06 | Explicit CORS policy | P1 | Open — Not Started |
@@ -50,7 +50,7 @@ No application code has been written as part of producing this document. No item
 | 18 | SEC-08 | PII/log-injection/security-event tests | Gap | Open — Design Pending |
 | 19 | TEST-01 | Endpoint-to-requirement test matrix | Gap | Open — Not Started |
 | 20 | TEST-03 | Expanded malformed/boundary testing | Gap | Open — Not Started |
-| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance) |
+| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance) |
 | 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Open — Blocked by #4 |
 | 23 | TEST-06 | Fault injection, rollback, idempotency tests (combined) | Gap | Open — Blocked by #4, #11 |
 | 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Open — Blocked by #13 |
@@ -105,14 +105,14 @@ No application code has been written as part of producing this document. No item
 | Problem identified | The previous evaluation found that tenant/resource authorization was unresolved: tenant isolation and resource ownership/authorization were not implemented, leaving the system exposed to BOLA/IDOR, and this was untested for query, redaction, export, and compliance endpoints. |
 | Required remediation | Implement tenant isolation; implement resource ownership/authorization; prevent BOLA/IDOR; query endpoints must be tenant-scoped; redaction must be tenant/resource authorized; export must be tenant authorized; compliance reporting must be tenant authorized; add explicit cross-tenant negative tests (tracked as item 21, `TEST-04`, the dedicated test counterpart, rather than duplicated here). |
 | Design decision | `docs/DECISIONS.md` ADR-012 (Accepted). `tenant_id` is a first-class, hashed column on `audit_record`, derived only from the JWT `tenantId` claim (never the request body). Query/fetch endpoints are tenant-scoped by default; `AUDITOR` role grants cross-tenant read. `GET /audit/verify` requires `AUDITOR` outright rather than being tenant-scoped (global chain — see ADR-012 for why tenant-scoped verify would produce false positives). Redaction/export/compliance endpoints don't exist yet (Milestones 8-10); their authorization will follow this same pattern when built. |
-| Implementation task | Done for query/fetch/verify: `AuditQueryService` (tenant scoping + AUDITOR override), `AuditEventService` (tenant derived from JWT on write), `ChainVerificationService` (AUDITOR gate). `RedactionService`/`ExportBundleService`/compliance endpoint authorization: not yet built (tracked for Milestones 8-10). |
+| Implementation task | Done for query/fetch/verify/redaction: `AuditQueryService` (tenant scoping + AUDITOR override), `AuditEventService` (tenant derived from JWT on write), `ChainVerificationService` (AUDITOR gate), `RedactionService` (same tenant-or-AUDITOR pattern, 404 for cross-tenant). `ExportBundleService`/compliance endpoint authorization: not yet built (tracked for Milestones 9-10). |
 | Unit test | `JwtServiceTest` (6 tests) covers principal/claims extraction the authorization checks depend on. |
 | Integration test | `TenantIsolationTest` (7 tests): cross-tenant query returns no leaked records, explicit cross-tenant `tenantId` param ignored for non-AUDITOR, cross-tenant fetch-by-id returns 404, write always scoped to caller's tenant, AUDITOR can cross-tenant query/verify. |
 | Security test | `TenantIsolationTest.verifyRequiresAuditorRole` (403 for `ROLE_USER`) — dedicated BOLA/cross-tenant coverage; see also item 21 (`TEST-04`), same test class. |
 | Documentation evidence | `docs/DECISIONS.md` ADR-012; `docs/SECURITY.md` (tenant isolation section). |
 | Runtime/reproduction evidence | Live manual run (2026-08-20): two tenants via `/dev/auth/token`, cross-tenant query returned `{"items":[]}`, `ROLE_USER` calling `/audit/verify` got 403, `ROLE_AUDITOR` got 200 with `chainIntact: true`. |
 | Git commit | Milestone 7 commit (see `git log`). |
-| Status | Implemented, Tested (query/fetch/verify) — Open for redaction/export/compliance until Milestones 8-10 |
+| Status | Implemented, Tested (query/fetch/verify/redaction) — Open for export/compliance until Milestones 9-10 |
 | Reviewer sign-off | Pending |
 
 ---
@@ -448,7 +448,7 @@ No application code has been written as part of producing this document. No item
 | Documentation evidence | `docs/ENDPOINT_TEST_MATRIX.md`, `docs/DECISIONS.md` ADR-012. |
 | Runtime/reproduction evidence | Live manual run (2026-08-20): tenant-B caller querying `/audit/events` after tenant-A wrote a record returned `{"items":[]}`. |
 | Git commit | Milestone 7 commit (see `git log`). |
-| Status | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance) |
+| Status | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance) |
 | Reviewer sign-off | Pending |
 
 ### 22. TEST-05 — Replay/duplicate semantics tests
