@@ -19,6 +19,8 @@ audit:
     genesis-seed: "AUDIT-CHAIN-GENESIS-v1"
   retention:
     window-days: 90
+  compliance:
+    client-data-resource-types: "ACCOUNT"
   security:
     jwt:
       secret: "test-only-hmac-secret-not-for-any-real-use-9b2e7d"

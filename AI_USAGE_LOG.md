@@ -184,3 +184,19 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human approval:** Pending as of this entry.
 
 **Git commit:** See `git log` — Milestone 9 commit follows this entry's own commit.
+
+---
+
+## [2026-08-20] Milestone 10: compliance scenario (Scenario C)
+
+**Prompt intent:** Continue the roadmap (compliance next), keep committing at each meaningful step, keep tracking against `docs/EVALUATION_CLOSURE_MATRIX.md`. This scenario has its own explicit process requirement from the assignment: clarify and normalize the ambiguous requirement *before* writing any code.
+
+**AI output:** `docs/scenario-c.md` was written first, before any Scenario C code -- 6 ambiguities identified, 6 assumptions stated with the rejected alternative named for each (e.g., "access" was interpreted as any recorded interaction rather than read-only, because the system has no enforced read/write taxonomy on `eventType` and building one just for this endpoint would be scope creep the requirement doesn't clearly justify). The clarification doc was written entirely by the AI based on the raw one-sentence requirement and the existing system's actual capabilities -- there was no additional product/stakeholder input available, which is itself stated in the document (several assumptions explicitly note what a real product conversation would need to confirm). The implementation followed directly from the clarification: a new, distinct `ROLE_COMPLIANCE_OFFICER` (deliberately not reusing `AUDITOR`, so the two are testably different capabilities), a mandatory (never defaulted) time range, and a configurable resource-type allow-list rather than a hardcoded guess at what "client account data" means.
+
+**Human decision:** The engineer set the milestone order; every substantive interpretation of the ambiguous requirement in this milestone was the AI's judgment call, recorded explicitly in `docs/scenario-c.md` rather than silently baked into code, per the assignment's own instruction not to silently interpret this scenario. Not yet reviewed by the engineer as of this entry -- and this scenario in particular deserves that review, since it's scored on the reasoning artifact and the engineer may disagree with one or more of the six assumptions.
+
+**Validation performed:** `mvn test` → `Tests run: 78, Failures: 0, Errors: 0` (BUILD SUCCESS) -- all 7 new tests passed on the first run. Live run: confirmed the role distinction (`ROLE_USER` → 403, `ROLE_COMPLIANCE_OFFICER` → 200) via `curl`.
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log` — Milestone 10 commit follows this entry's own commit.

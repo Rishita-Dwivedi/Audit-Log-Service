@@ -77,6 +77,24 @@ Tracks actual implementation progress, phase by phase, against the plan in `docs
 
 **Not done in this milestone:** compliance scenario (Milestone 10); the remaining closure-matrix P0/P1 items (JaCoCo, request limits, CORS, secrets, TLS, DB permissions, fault-injection tests, reproducible CI evidence -- Milestones 11-12); hard archival (`ADR-004` alternative, not pursued); Merkle-root chain-inclusion proof for exports (`ADR-013`, scoped limitation, unchanged from the original design).
 
+## Milestone 10 — Compliance scenario (Scenario C) — COMPLETE (2026-08-20)
+
+**Scope:** `FR-C1`/`FR-C2` (docs/scenario-c.md), per the assignment's explicit process: clarify and normalize *before* writing code, since this requirement is intentionally under-specified.
+
+**What was built:**
+- `docs/scenario-c.md`, written first: raw requirement, 6 identified ambiguities, 6 stated assumptions (each with the rejected alternative and why), a clarified requirement statement, design, and an explicit scoped-out list.
+- `ComplianceReportService`/`ComplianceReportController` (`GET /audit/compliance-report`): a genuinely thin layer reusing `AuditEventPageResponse` and the same keyset-pagination pattern as `AuditQueryService`, gated to a new, distinct `ROLE_COMPLIANCE_OFFICER` (not reusing `AUDITOR`), scoped to a configurable "client account data" resource-type allow-list (`audit.compliance.client-data-resource-types`), with `from`/`to` **mandatory** (never defaulted -- an implicit range risks an incomplete report looking complete).
+- `AuditRecordRepository.findForComplianceReport()`: the one new query, filtering by resource-type allow-list and time range.
+- 7 new tests: `ComplianceReportTest`. Total: 78 tests, all passing.
+
+**No new bugs found this milestone.**
+
+**Evidence:** `mvn test` → `Tests run: 78, Failures: 0, Errors: 0` (BUILD SUCCESS). Live run: confirmed `ROLE_USER` gets 403, `ROLE_COMPLIANCE_OFFICER` gets a real report.
+
+**This closes `docs/EVALUATION_CLOSURE_MATRIX.md` items 3/21 (`SEC-03`/`TEST-04`) completely** -- all four endpoint categories the evaluation named (query, redaction, export, compliance) are now tenant-authorized and tested.
+
+**Not done in this milestone (explicitly scoped out, per `docs/scenario-c.md`):** real regulator delivery/transmission; PII masking beyond Scenario B's existing redaction; human-readable export formats (CSV/PDF); a formal read/write taxonomy for `eventType`.
+
 ## Remaining milestones — NOT STARTED
 
-Per your roadmap, in order: Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-9 above.
+Per your roadmap, in order: Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-10 above.

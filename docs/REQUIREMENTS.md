@@ -93,24 +93,22 @@ Also tested: filter validation (`exportRequiresAtLeastOneFilter`), correct scopi
 
 This requirement is **intentionally under-specified** by the assignment. Per the assignment's own instructions, this document does not resolve it into invented specifics — that resolution is Scenario C's deliverable, produced through an explicit clarification process before any Scenario C code is written (see `docs/scenario-c.md`, to be authored at the start of Phase 9).
 
-### FR-C1 — Requirement Clarification
+### FR-C1 — Requirement Clarification — DOCUMENTED (Milestone 10, 2026-08-20)
 Demonstrate, in the repository, how the raw requirement above is clarified and normalized before writing any code.
 
 **Acceptance criteria**
-- The clarified requirement statement is written down.
-- Identified ambiguities are listed explicitly, for example (not yet resolved, listed here only as known open questions):
-  - What does "access" mean — read-only, or read/write/permission-change?
-  - What counts as "client account data" — which `resourceType` values?
-  - Who consumes the report — a person via API, an automated export, a scheduled delivery to a third party?
-  - What time range and format are expected?
-- Assumptions made to proceed (or the questions that would be asked of product before proceeding) are stated explicitly, not silently baked into the implementation.
+- The clarified requirement statement is written down. — DONE (`docs/scenario-c.md`, "Clarified requirement statement" section)
+- Identified ambiguities are listed explicitly. — DONE (`docs/scenario-c.md` lists 6, expanded from the 4 originally flagged during planning)
+- Assumptions made to proceed (or the questions that would be asked of product before proceeding) are stated explicitly, not silently baked into the implementation. — DONE (`docs/scenario-c.md`, each of the 6 assumptions states the rejected alternative and why)
 
-### FR-C2 — Scoped Design and Implementation
+### FR-C2 — Scoped Design and Implementation — IMPLEMENTED, TESTED (Milestone 10, 2026-08-20)
 Translate the clarified requirement into a concrete technical design, and implement it (or a well-reasoned partial implementation with a documented scope boundary).
 
 **Acceptance criteria**
-- The design document states what is implemented versus what is explicitly scoped out, and why.
-- The implementation (full or partial) is consistent with the clarified requirement statement and the stated assumptions.
+- The design document states what is implemented versus what is explicitly scoped out, and why. — DONE (`docs/scenario-c.md`, "Design" and "Scoped out" sections: real regulator delivery, PII masking beyond Scenario B, human-readable formats, and a formal read/write taxonomy are all explicitly out)
+- The implementation (full or partial) is consistent with the clarified requirement statement and the stated assumptions. — TESTED (`ComplianceReportTest`, 7 tests): `COMPLIANCE_OFFICER`-only (distinct from `AUDITOR`), mandatory `from`/`to`, allow-listed resource types only, cross-tenant by default with optional narrowing, redaction respected not bypassed, time-range filtering correct.
+
+This also closes `docs/EVALUATION_CLOSURE_MATRIX.md` items 3/21 (`SEC-03`/`TEST-04`) for the last remaining endpoint category — all four (query, redaction, export, compliance) are now tenant-authorized and tested.
 
 ---
 
