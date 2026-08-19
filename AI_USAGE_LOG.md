@@ -75,3 +75,58 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human decision:** The engineer had not yet responded to the flagged H2/Postgres tension at the time this entry covers — that decision is recorded separately below, once actually made.
 
 **Sign-off:** Reviewed only to the extent the engineer's next message engaged directly with the flagged tension (see the H2 decision entry below); the matrix content itself has not been separately signed off line-by-line.
+
+---
+
+## [2026-08-20] Database decision: H2 selected over PostgreSQL/Testcontainers
+
+**Prompt intent:** Resolve the H2-vs-Postgres tension flagged in the Evaluation Closure Matrix work above.
+
+**AI output:** N/A — this was not an AI recommendation being accepted; the engineer stated the decision directly and instructed the AI to update the architecture/planning documents accordingly and not spend implementation time on Docker.
+
+**Engineer's decision, recorded as given:**
+- PostgreSQL/Testcontainers was considered.
+- Docker was reported by the engineer as unavailable/impractical in the current environment. (Note: this was not independently re-verified by attempting a Docker/Testcontainers setup — it is recorded as the engineer's stated constraint, not a tested fact.)
+- H2 was selected to keep the prototype runnable within the assignment's time-box, via a simple `mvn` command with no external service dependency.
+- PostgreSQL/Testcontainers remains an explicitly documented production-compatibility and reproducibility limitation (`docs/EVALUATION_CLOSURE_MATRIX.md` items 9, 11, 13, 22; `docs/DECISIONS.md` ADR-001), not silently treated as equivalent to what H2 provides.
+- This decision was made by the engineer, not defaulted to by the AI.
+
+**Sign-off:** Given directly by the engineer as an explicit instruction, which is the decision itself — no separate approval step applies.
+
+---
+
+## [2026-08-20] Phase 1 implementation — Project Foundation + Scenario A Core Domain
+
+**Prompt intent:** Implement Phase 1 only (explicitly scoped: project foundation, layered architecture, the audit event write/query APIs, SHA-256 hash chain, chain verification, concurrency control for the write path, forward-declared security interfaces) — not Scenario B, not Scenario C, not the external chain anchor. Update `docs/ARCHITECTURE.md`, `docs/REQUIREMENTS.md`, `docs/IMPLEMENTATION_PLAN.md`, `docs/SECURITY.md`, `docs/TESTING.md`, `docs/ENDPOINT_TEST_MATRIX.md`, `docs/DECISIONS.md`, and this log. Explicit instruction: run tests, inspect failures, fix failures, inspect the diff, check for secrets, then make one meaningful commit — and not to fabricate validation that hadn't happened.
+
+**AI output:** A full Spring Boot project (pom.xml; entity/repository/hash/domain/dto/service/controller/exception/security packages; a Flyway migration; 24 tests). Before any of that, the AI discovered this environment had no usable JDK (only JDK 10 from 2020) and no Maven, and installed a JDK 21 (via `winget`) and Maven 3.9.9 (downloaded from the Apache archive) rather than writing code that could not actually be compiled or tested — flagged to the engineer as a system-level change before proceeding.
+
+**What was generated and then corrected during this session (AI-authored, AI-caught, not engineer-caught after the fact):**
+1. `mvn compile` succeeded on the first attempt (25 source files). `mvn test` did not: `LocalServerPort` was imported from the wrong package for this Spring Boot version (`org.springframework.boot.web.server` instead of `org.springframework.boot.test.web.server`) — a version-specific API detail the AI got wrong initially and fixed after the compiler reported it.
+2. Hibernate schema-validation failures: the JPA entity's inferred column types (`VARCHAR(255)` default for a converted `String` attribute, then a `columnDefinition="CLOB"` attempt) didn't match what Flyway had actually created (`CLOB`, `CHAR(64)`). Fixed by switching to `@Lob` for the payload converter and `VARCHAR(64)` (instead of `CHAR(64)`) for the hash columns in the migration — found only by actually running the build, not by inspection.
+3. A real logic bug: `TamperDetectionTest.detectsIncorrectPreviousHash` failed because `ChainVerificationService` reported `CONTENT_MISMATCH` instead of the expected `LINKAGE_BROKEN` when `previous_hash` was tampered directly. Root cause: `previous_hash` is itself one of the fields that feeds `record_hash`'s own computation, so tampering it also breaks the content-hash recomputation. Fixed by checking linkage before content in the verification loop, with the reasoning recorded in `docs/ARCHITECTURE.md` and `docs/DECISIONS.md` rather than just silently reordered.
+4. A real concurrency-adjacent bug, not a concurrency-control bug: `ConcurrentAppendTest` initially failed with **every** one of 20 records reporting `CONTENT_MISMATCH`, even though sequencing was perfectly correct (20 unique, contiguous sequence numbers — proving the pessimistic-lock mechanism itself worked). Root cause: `OffsetDateTime.now()` (used only in this test) carries nanosecond precision, which the database round-trip did not preserve exactly, so the hash computed at write time (full precision) didn't match the hash recomputed at verify time (post-round-trip precision) — a false-tamper signal with nothing actually tampered. Fixed by truncating timestamps to millisecond precision *before* hashing, in `AuditEventService`, so the hashed value and the persisted/re-read value are always identical regardless of what the database's real storage precision turns out to be. Recorded in `docs/DECISIONS.md` (ADR-002 addendum) as a genuine implementation-time finding, not designed for up front.
+
+**Human decision:** The engineer directed Phase 1's exact scope and explicitly required that tests actually be run and failures actually be fixed before any commit — this shaped the AI's process (build-then-fix-then-rebuild, not write-once-and-claim-done). The four corrections above were made by the AI in response to real, observed failures (compiler errors, Hibernate startup errors, failing assertions), not engineer-directed code review; the engineer had not reviewed the resulting source code line-by-line as of the original version of this entry.
+
+**Validation performed:** `mvn test` → `Tests run: 24, Failures: 0, Errors: 0, Skipped: 0` (BUILD SUCCESS). `mvn clean package` → BUILD SUCCESS (packaged jar). A live manual run: the packaged jar started standalone, two events written via `curl`, `/audit/verify` confirmed intact, a record tampered directly via `org.h2.tools.Shell` (bypassing the application), `/audit/verify` re-run and correctly reported the tamper (`CONTENT_MISMATCH`, correct `sequenceNo` and `recordId`).
+
+**Tests run:** All 24 (9 unit, 15 integration) — see `docs/TESTING.md` for the full mapping to test classes/methods and the exact commands used.
+
+**Human approval:** Originally logged as pending in the same turn the work was produced. The engineer's next message ("what is phase 2?") implicitly treated Phase 1 as complete and moved the conversation forward without raising an objection to the implementation; the engineer then separately flagged that the whole of Phase 1 had landed in a single commit rather than one commit per milestone, which the AI agreed was a real process gap (see the history-reconstruction entry below) and corrected. This is not the same as a line-by-line code review sign-off, which still has not explicitly occurred as of this entry.
+
+**Git commit:** Originally `9d18f0a` (single commit for all of Phase 1). Superseded — see the next entry.
+
+---
+
+## [2026-08-20] Git history reconstruction: Phase 1 mega-commit split into per-milestone commits
+
+**Prompt intent:** The engineer presented a milestone-based roadmap (Planning → Project Structure → Milestones 1-6 → Security → Redaction → Retention/Export → Compliance → Security/negative testing → JaCoCo/CI) and asked where the project currently stood against it, explicitly restating that "on every meaningful step we have to do commits."
+
+**AI output:** Pointed out, unprompted, that all of Planning/Structure/Milestones 1-6 existed as a single commit (`9d18f0a`) despite being functionally complete — directly contradicting the stated per-milestone commit discipline and the assignment's own requirement for real incremental history. Proposed two options (rewrite history now, while nothing is pushed anywhere and it's still free to do; or accept the single commit and be disciplined from here on) and asked the engineer to choose rather than deciding unilaterally.
+
+**Human decision:** The engineer chose to rewrite history now. The AI then reconstructed the single commit into 9 sequential commits (Planning; Project Structure; Milestones 1-6; this entry's own wrap-up commit) using `git update-ref -d` to un-commit while preserving the working tree (verified safe beforehand: no remote configured, nothing pushed, single local branch). Two files that legitimately span multiple milestones (`AI_USAGE_LOG.md`, `AuditEventController.java`) were temporarily trimmed to their true point-in-time content and restored later, rather than landing in one commit out of order. `docs/REQUIREMENTS.md`, `docs/ARCHITECTURE.md`, and `docs/DECISIONS.md` were **not** split by paragraph-level history — they already contained Phase-1 status annotations added after the fact, and attempting to strip and re-add that content precisely was judged not worth the risk of introducing an error into documents that other commits' messages reference; this is stated explicitly in the Planning commit's message rather than left implicit.
+
+**Sign-off:** Given directly by the engineer via the explicit choice above.
+
+**Git commit:** See `git log` from this point forward — `9d18f0a` no longer exists as a ref (the objects remain reachable via reflog only, not referenced by any branch).
