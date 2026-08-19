@@ -15,6 +15,8 @@ public interface AuditRecordRepository extends JpaRepository<AuditRecordEntity, 
 
     List<AuditRecordEntity> findAllByOrderBySequenceNoAsc();
 
+    java.util.Optional<AuditRecordEntity> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
+
     @Query("""
             select a from AuditRecordEntity a
             where (:tenantId is null or a.tenantId = :tenantId)

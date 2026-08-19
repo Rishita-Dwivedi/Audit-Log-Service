@@ -33,25 +33,25 @@ No application code has been written as part of producing this document. No item
 | 1 | ATT-01 | Delivery commit identifiability | P0 | Open — Not Started |
 | 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Open — Not Started |
 | 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify/redaction/export/compliance) |
-| 4 | SEC-06 | Replay/idempotency protection | P1 | Open — Not Started |
-| 5 | SEC-06 | Global request/body limits | P1 | Open — Not Started |
-| 6 | SEC-06 | Explicit CORS policy | P1 | Open — Not Started |
+| 4 | SEC-06 | Replay/idempotency protection | P1 | Implemented, Tested |
+| 5 | SEC-06 | Global request/body limits | P1 | Implemented, Tested (declared Content-Length only -- see ADR-014) |
+| 6 | SEC-06 | Explicit CORS policy | P1 | Implemented, Tested |
 | 7 | SEC-09 | Secret management & rotation strategy | P1 | Open — Not Started |
 | 8 | SEC-09 | TLS/HTTPS deployment evidence | P1 | Open — Not Started |
-| 9 | SEC-09 | Immutable DB permissions for audit records | P1 | Open — Design Pending |
-| 10 | SEC-09 | Operational monitoring documentation | P1 | Open — Not Started |
+| 9 | SEC-09 | Immutable DB permissions for audit records | P1 | Open — genuine tension with redaction/archival found, documented in ADR-014, not implemented |
+| 10 | SEC-09 | Operational monitoring documentation | P1 | Implemented, Tested (health endpoint only) |
 | 11 | TEST-06 | Database fault/rollback tests | P1 | Open — Not Started |
-| 12 | TEST-06 | Multi-instance/concurrent contention testing | P1 | Open — Design Pending |
+| 12 | TEST-06 | Multi-instance/concurrent contention testing | P1 | Implemented, Tested (ConcurrentAppendTest, Milestone 4 -- status correction: this was already closed and not previously marked) |
 | 13 | TEST-08 | Reproducible CI/test artifacts & Testcontainers reporting | P1 | Open — Design Pending |
 | 14 | ARC-02 | External chain-head anchor | P2 | Open — Design Pending (feasibility to be assessed) |
 | 15 | ARC-03 | Signed export manifests | P2 | Implemented, Tested |
 | 16 | SEC-02 | Invalid/expired/forged/missing authentication tests | Gap | Implemented, Tested |
-| 17 | SEC-05 | Oversized/malformed request body tests | Gap | Open — Blocked by #5 |
+| 17 | SEC-05 | Oversized/malformed request body tests | Gap | Implemented, Tested |
 | 18 | SEC-08 | PII/log-injection/security-event tests | Gap | Open — Design Pending |
 | 19 | TEST-01 | Endpoint-to-requirement test matrix | Gap | Open — Not Started |
 | 20 | TEST-03 | Expanded malformed/boundary testing | Gap | Open — Not Started |
 | 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify/redaction/export/compliance) |
-| 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Open — Blocked by #4 |
+| 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Implemented, Tested |
 | 23 | TEST-06 | Fault injection, rollback, idempotency tests (combined) | Gap | Open — Blocked by #4, #11 |
 | 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Open — Blocked by #13 |
 | 25 | ARC-02 | External anchor trade-off documentation | Gap | Open — Blocked by #14 |

@@ -22,7 +22,7 @@ import java.util.Set;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final Set<String> PUBLIC_PATHS = Set.of("/dev/auth/token");
+    private static final Set<String> PUBLIC_PATHS = Set.of("/dev/auth/token", "/actuator/health");
 
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;

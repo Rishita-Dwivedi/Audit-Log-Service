@@ -1,5 +1,6 @@
 package com.auditlog.controller;
 
+import com.auditlog.dto.AppendResult;
 import com.auditlog.dto.AuditEventCreateRequest;
 import com.auditlog.dto.AuditEventPageResponse;
 import com.auditlog.dto.AuditEventResponse;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,9 +39,13 @@ public class AuditEventController {
     }
 
     @PostMapping
-    public ResponseEntity<AuditEventResponse> create(@Valid @RequestBody AuditEventCreateRequest request) {
-        AuditEventResponse response = auditEventService.append(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    public ResponseEntity<AuditEventResponse> create(@Valid @RequestBody AuditEventCreateRequest request,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+        AppendResult result = auditEventService.append(request, idempotencyKey);
+        // A replayed request returns the original record with 200, not 201 -- it did not create
+        // anything new (docs/DECISIONS.md ADR-014, docs/EVALUATION_CLOSURE_MATRIX.md item 4).
+        HttpStatus status = result.wasReplay() ? HttpStatus.OK : HttpStatus.CREATED;
+        return ResponseEntity.status(status).body(result.response());
     }
 
     @GetMapping

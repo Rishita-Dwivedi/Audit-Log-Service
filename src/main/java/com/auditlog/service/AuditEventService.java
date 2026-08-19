@@ -1,7 +1,7 @@
 package com.auditlog.service;
 
+import com.auditlog.dto.AppendResult;
 import com.auditlog.dto.AuditEventCreateRequest;
-import com.auditlog.dto.AuditEventResponse;
 import com.auditlog.entity.AuditRecordEntity;
 import com.auditlog.entity.ChainHeadEntity;
 import com.auditlog.hash.HashChainService;
@@ -45,15 +45,26 @@ public class AuditEventService {
      * in-memory lock) and why this was chosen.
      */
     @Transactional
-    public AuditEventResponse append(AuditEventCreateRequest request) {
+    public AppendResult append(AuditEventCreateRequest request, String idempotencyKey) {
         // tenantId is taken from the authenticated principal, never from the request body --
         // a caller must not be able to write into another tenant's data by claiming a
         // different tenantId in the payload (docs/EVALUATION_CLOSURE_MATRIX.md item 3, SEC-03).
         AuthenticatedPrincipal principal = AuditSecurityContext.current();
         String tenantId = principal.tenantId();
 
+        // Lock first, then check idempotency: since ALL writes are already serialized through
+        // this lock (docs/DECISIONS.md ADR-011), checking for an existing idempotency key here
+        // is automatically race-safe -- two concurrent requests with the same key can't both
+        // pass the "not found" check, because only one holds the lock at a time.
         ChainHeadEntity head = chainHeadRepository.lockHead()
                 .orElseThrow(() -> new IllegalStateException("chain_head row is missing; schema not initialized correctly"));
+
+        if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+            var existing = auditRecordRepository.findByTenantIdAndIdempotencyKey(tenantId, idempotencyKey);
+            if (existing.isPresent()) {
+                return new AppendResult(AuditRecordMapper.toResponse(existing.get()), true);
+            }
+        }
 
         long previousSequenceNo = head.getLastSequenceNo();
         String previousHash = previousSequenceNo == 0 ? hashChainService.genesisHash() : head.getLastRecordHash();
@@ -86,11 +97,12 @@ public class AuditEventService {
         AuditRecordEntity entity = new AuditRecordEntity(
                 UUID.randomUUID(), nextSequenceNo, tenantId, request.eventType(), request.actorId(),
                 request.resourceType(), request.resourceId(), request.payload(),
-                eventTimestamp, recordedAt, recordHash, previousHash, salt, fieldCommitments);
+                eventTimestamp, recordedAt, recordHash, previousHash, salt, fieldCommitments,
+                idempotencyKey != null && !idempotencyKey.isBlank() ? idempotencyKey : null);
 
         auditRecordRepository.save(entity);
         head.advance(nextSequenceNo, recordHash);
 
-        return AuditRecordMapper.toResponse(entity);
+        return new AppendResult(AuditRecordMapper.toResponse(entity), false);
     }
 }

@@ -95,6 +95,12 @@ Tracks actual implementation progress, phase by phase, against the plan in `docs
 
 **Not done in this milestone (explicitly scoped out, per `docs/scenario-c.md`):** real regulator delivery/transmission; PII masking beyond Scenario B's existing redaction; human-readable export formats (CSV/PDF); a formal read/write taxonomy for `eventType`.
 
-## Remaining milestones — NOT STARTED
+## Milestone 11 — Security + negative testing — COMPLETE (2026-08-20)
 
-Per your roadmap, in order: Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-10 above.
+**Built:** idempotency-key replay protection, request-size limits (413), explicit CORS policy, `/actuator/health` monitoring (`docs/DECISIONS.md` ADR-014). Closes closure-matrix items 4, 5, 6, 10, 12 (status correction — already covered since Milestone 4), 17, 22.
+
+**Deliberately not implemented, documented instead (ADR-014):** TLS (item 8), immutable DB permissions (item 9 — found a genuine tension with redaction/archival's legitimate need to `UPDATE` records; needs column-level grants or Postgres), DB fault/rollback tests (item 11), PII/log-injection tests (item 18). Time-boxed given session constraints; prioritized breadth of closed items with real, tested code over partial coverage of more.
+
+**Evidence:** `mvn test` → 83/83 passing.
+
+## Milestone 12 — JaCoCo + CI + final evidence — see below

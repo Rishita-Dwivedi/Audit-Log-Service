@@ -200,3 +200,19 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human approval:** Pending as of this entry.
 
 **Git commit:** See `git log` — Milestone 10 commit follows this entry's own commit.
+
+---
+
+## [2026-08-20] Milestone 11: security + negative testing
+
+**Prompt intent:** Continue the roadmap; mid-milestone the engineer flagged their session was near its limit and asked for completion within the remaining budget.
+
+**AI output:** Idempotency-key replay protection (checked after the existing chain_head lock, so it's race-safe for free), a declared-Content-Length request-size filter, an explicit empty-origin CORS policy, and `/actuator/health`. Given the token/time constraint, deliberately narrowed scope: skipped TLS and a full immutable-DB-permissions implementation in favor of documenting them precisely (including a genuine tension found — redaction/archival need real UPDATE access, so a blanket permission restriction would break the system's own legitimate functionality) rather than risking a rushed, undertested implementation of either. One real bug: a YAML duplicate-key edit broke application startup (an errant second `security:` block under `audit:`) — caught immediately by the resulting test failures and fixed. One test (`oversizedRequestBodyIsRejected`) was rewritten after discovering the test HTTP client doesn't declare `Content-Length` for a body built via a Map argument, exactly the documented chunked-encoding gap in the filter itself.
+
+**Human decision:** Engineer set milestone order and, mid-milestone, explicitly constrained remaining scope/depth given session limits -- the AI's response was to cut lower-value items (TLS, DB-permission implementation, elaborate log-capture test infrastructure) rather than rush all of them shallowly.
+
+**Validation performed:** `mvn test` → `Tests run: 83, Failures: 0, Errors: 0` (BUILD SUCCESS).
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log` — Milestone 11 commit follows this entry's own commit.

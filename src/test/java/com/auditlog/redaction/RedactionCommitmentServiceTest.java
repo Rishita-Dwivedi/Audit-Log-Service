@@ -125,7 +125,7 @@ class RedactionCommitmentServiceTest {
         JsonNode commitments = service.computeCommitments(payload, salt);
         OffsetDateTime now = OffsetDateTime.parse("2026-01-01T00:00:00Z");
         return new AuditRecordEntity(UUID.randomUUID(), 1L, "tenant-1", "TEST_EVENT", "actor-1",
-                "TYPE", "id-1", payload, now, now, "recordhash", "prevhash", salt, commitments);
+                "TYPE", "id-1", payload, now, now, "recordhash", "prevhash", salt, commitments, null);
     }
 
     private AuditRecordEntity withTamperedPayload(AuditRecordEntity original, String newPayloadJson) throws Exception {
@@ -134,6 +134,7 @@ class RedactionCommitmentServiceTest {
         return new AuditRecordEntity(original.getId(), original.getSequenceNo(), original.getTenantId(),
                 original.getEventType(), original.getActorId(), original.getResourceType(), original.getResourceId(),
                 objectMapper.readTree(newPayloadJson), original.getEventTimestamp(), original.getRecordedAt(),
-                original.getRecordHash(), original.getPreviousHash(), original.getSalt(), original.getFieldCommitments());
+                original.getRecordHash(), original.getPreviousHash(), original.getSalt(), original.getFieldCommitments(),
+                original.getIdempotencyKey());
     }
 }

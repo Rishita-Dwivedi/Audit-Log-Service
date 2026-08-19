@@ -22,6 +22,7 @@ audit:
   compliance:
     client-data-resource-types: "ACCOUNT"
   security:
+    max-request-bytes: 1048576
     jwt:
       secret: "test-only-hmac-secret-not-for-any-real-use-9b2e7d"
       issuer: "audit-log-service-dev"

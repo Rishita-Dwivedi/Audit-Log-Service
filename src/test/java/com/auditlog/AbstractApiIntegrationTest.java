@@ -90,6 +90,13 @@ abstract class AbstractApiIntegrationTest {
         return restTemplate.exchange(baseUrl(path), HttpMethod.POST, new HttpEntity<>(body, authHeaders(tenantId, roles)), responseType);
     }
 
+    protected <T> ResponseEntity<T> postWithIdempotencyKey(String path, String tenantId, String[] roles, Object body,
+                                                             String idempotencyKey, Class<T> responseType) {
+        HttpHeaders headers = authHeaders(tenantId, roles);
+        headers.set("Idempotency-Key", idempotencyKey);
+        return restTemplate.exchange(baseUrl(path), HttpMethod.POST, new HttpEntity<>(body, headers), responseType);
+    }
+
     protected <T> ResponseEntity<T> get(String path, String tenantId, String[] roles, Class<T> responseType) {
         return restTemplate.exchange(baseUrl(path), HttpMethod.GET, new HttpEntity<>(authHeaders(tenantId, roles)), responseType);
     }

@@ -97,6 +97,10 @@ public class AuditRecordEntity {
     @Column(name = "redacted_by", length = 200)
     private String redactedBy;
 
+    /** docs/DECISIONS.md ADR-014 (replay/idempotency protection). Null unless the caller supplied one. */
+    @Column(name = "idempotency_key", updatable = false, length = 200)
+    private String idempotencyKey;
+
     protected AuditRecordEntity() {
         // JPA
     }
@@ -104,7 +108,8 @@ public class AuditRecordEntity {
     public AuditRecordEntity(UUID id, long sequenceNo, String tenantId, String eventType, String actorId,
                               String resourceType, String resourceId, JsonNode payload,
                               OffsetDateTime eventTimestamp, OffsetDateTime recordedAt,
-                              String recordHash, String previousHash, String salt, JsonNode fieldCommitments) {
+                              String recordHash, String previousHash, String salt, JsonNode fieldCommitments,
+                              String idempotencyKey) {
         this.id = id;
         this.sequenceNo = sequenceNo;
         this.tenantId = tenantId;
@@ -121,6 +126,7 @@ public class AuditRecordEntity {
         this.fieldCommitments = fieldCommitments;
         this.status = AuditRecordStatus.ACTIVE;
         this.redactedFields = JsonNodeFactory.instance.arrayNode();
+        this.idempotencyKey = idempotencyKey;
     }
 
     /**
@@ -252,5 +258,9 @@ public class AuditRecordEntity {
 
     public String getRedactedBy() {
         return redactedBy;
+    }
+
+    public String getIdempotencyKey() {
+        return idempotencyKey;
     }
 }
