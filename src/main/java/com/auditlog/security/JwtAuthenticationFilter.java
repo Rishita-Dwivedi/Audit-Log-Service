@@ -16,13 +16,17 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Requires a valid Bearer JWT on every request except the dev token-issuance endpoint itself.
- * Registered automatically by Spring Boot (any Filter bean is auto-registered for all paths).
+ * Requires a valid Bearer JWT on every request except the dev token-issuance endpoint, the
+ * health check, and the Swagger UI/OpenAPI doc pages themselves (the UI page must load without
+ * a token; API calls made *through* it still need one, entered via the "Authorize" button --
+ * see OpenApiConfig). Registered automatically by Spring Boot (any Filter bean is
+ * auto-registered for all paths).
  */
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final Set<String> PUBLIC_PATHS = Set.of("/dev/auth/token", "/actuator/health");
+    private static final Set<String> PUBLIC_EXACT_PATHS = Set.of("/dev/auth/token", "/actuator/health");
+    private static final List<String> PUBLIC_PATH_PREFIXES = List.of("/swagger-ui", "/v3/api-docs");
 
     private final JwtService jwtService;
     private final ObjectMapper objectMapper;
@@ -35,7 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        if (PUBLIC_PATHS.contains(request.getRequestURI())) {
+        if (isPublic(request.getRequestURI())) {
             chain.doFilter(request, response);
             return;
         }
@@ -56,6 +60,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } finally {
             AuditSecurityContext.clear();
         }
+    }
+
+    private boolean isPublic(String uri) {
+        if (PUBLIC_EXACT_PATHS.contains(uri)) {
+            return true;
+        }
+        for (String prefix : PUBLIC_PATH_PREFIXES) {
+            if (uri.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void writeUnauthorized(HttpServletResponse response, String message) throws IOException {

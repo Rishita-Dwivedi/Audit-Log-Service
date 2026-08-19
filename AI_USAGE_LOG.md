@@ -216,3 +216,19 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human approval:** Pending as of this entry.
 
 **Git commit:** See `git log` — Milestone 11 commit follows this entry's own commit.
+
+---
+
+## [2026-08-20] Post-delivery: attestation, stale-docs fix, Swagger UI
+
+**Prompt intent:** Fill in `ATTESTATION.md` with real name/email/dates; then, separately, fix `docs/ARCHITECTURE.md` and `docs/ENDPOINT_TEST_MATRIX.md`, which the engineer correctly pointed out still described the Phase 1/Scenario-A-only system despite Milestones 7-12 having since added auth, redaction, export, retention, and compliance reporting; then add Swagger UI for a live demo.
+
+**AI output:** Attestation filled in as given. Both stale docs rewritten to describe the system as actually built (verified against the real source tree, not memory) — components, API table, data model, and every design-approach section (hash-chain, verification, redaction, export, retention, compliance) now match what's implemented, with remaining real gaps still named rather than glossed over. `springdoc-openapi` added, with a `JwtAuthenticationFilter` path exemption for the UI/docs pages themselves (verified actual API calls made through it still return 401 without a token — the exemption doesn't leak) and an `OpenApiConfig` Bearer-auth scheme so the interviewer can authorize once via the UI. `README.md` also rewritten (it was equally stale) with concrete Swagger + curl walkthroughs.
+
+**Human decision:** Engineer flagged the doc staleness directly rather than the AI catching it proactively -- worth noting plainly, not glossing over, since it's exactly the kind of drift these docs exist to prevent.
+
+**Validation performed:** `mvn test` → 84/84 passing (83 + 1 new Swagger-exemption test). Live run: `/swagger-ui/index.html` returns 200, `/v3/api-docs` lists all 7 real endpoints, `/audit/events` without a token still returns 401 through the UI's own path prefix.
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log`.

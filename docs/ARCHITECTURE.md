@@ -2,141 +2,169 @@
 
 Requirement IDs referenced below (`FR-A#`, `FR-B#`, `FR-C#`, `NFR#`) are defined in `REQUIREMENTS.md`. Rationale and alternatives for each design choice are in `DECISIONS.md`; this document describes the chosen design, not the reasoning behind it.
 
-**Implementation status (2026-08-20, Phase 1 — Project Foundation + Scenario A Core Domain):** everything under "Scenario A" below (write API, query API, hash chain, chain verification, concurrency control) is **IMPLEMENTED and TESTED** — 24/24 tests passing, including a live manual tamper demo against a running instance (see `docs/TESTING.md`). Everything under "Scenario B" (retention, redaction, export) is **design-only, NOT IMPLEMENTED** — Phase 1 was explicitly scoped to Scenario A. Scenario C is likewise not started. Package structure and file paths below reflect what actually exists in `src/main/java/com/auditlog/`, not just a proposal.
+**Implementation status (2026-08-20, all 12 milestones complete):** everything described below is **IMPLEMENTED and TESTED** — 83/83 tests passing, 91% instruction / 77% branch coverage (JaCoCo), plus repeated live manual verification against a running instance (write → verify → tamper via direct H2 access → verify again; redaction; export signing; retention; compliance reporting). Package structure and file paths below reflect what actually exists in `src/main/java/com/auditlog/`. Remaining gaps are named explicitly in each section, not hidden — see `docs/EVALUATION_CLOSURE_MATRIX.md` and `ENGINEERING_SUMMARY.md` for the complete list.
 
 ## Architecture principle
 
-The hash-chain logic is isolated in a single domain component that every write and every verification pass goes through — nothing else in the system computes or checks a hash independently. This is deliberate: the hash chain is the crux of the assignment, and having one well-tested implementation is safer than re-deriving the logic in multiple places.
+The hash-chain logic is isolated in a single domain component (`HashChainService`) that every write and every verification pass goes through — nothing else in the system computes or checks a hash independently. Redaction's field-commitment scheme (below) extends this principle rather than working around it: the hash is computed over per-field *commitments*, not raw payload values, which is what lets a value be redacted later without invalidating `record_hash`.
 
 ## Components
 
 ```
-Controller layer     AuditEventController, AuditVerifyController        [IMPLEMENTED]
-                      ExportController, ComplianceReportController      [NOT IMPLEMENTED -- Scenario B/C]
+Controller layer      AuditEventController      POST/GET /audit/events, GET /audit/events/{id}
+                       AuditVerifyController     GET /audit/verify
+                       RedactionController       POST /audit/events/{id}/redact
+                       RetentionController       POST /audit/retention/apply
+                       ExportController          GET /audit/export
+                       ComplianceReportController GET /audit/compliance-report
+                       DevAuthController         POST /dev/auth/token (NOT real auth -- docs/SECURITY.md)
 
-Service layer         AuditEventService (write path)                    [IMPLEMENTED]
-                      AuditQueryService (read path)                     [IMPLEMENTED]
-                      RetentionService                                  [NOT IMPLEMENTED -- Scenario B]
+Service layer          AuditEventService (write path: sequence/hash/commitment assignment,
+                                          idempotency-key check)
+                       AuditQueryService (read path: tenant-scoped keyset pagination)
+                       ChainVerificationService (linkage/content/sequence/commitment checks)
+                       RedactionService (tombstone application, tenant-authorized)
+                       RetentionService (soft-delete archival, AUDITOR-only)
+                       ComplianceReportService (allow-listed resource types, mandatory time range)
 
-Verification layer    ChainVerificationService                          [IMPLEMENTED]
-                      RedactionService                                  [NOT IMPLEMENTED -- Scenario B]
-                      ExportBundleService                                [NOT IMPLEMENTED -- Scenario B]
+Export                 ExportBundleService (com.auditlog.export) -- bundle assembly, canonical
+                                            manifest construction
+                       ExportSigningService (com.auditlog.export) -- EC/SHA256withECDSA signing
 
-Domain core            HashChainService (com.auditlog.hash)              [IMPLEMENTED]
-                      - PayloadCanonicalizer.canonicalize(payload) -> canonical string
-                      - computeRecordHash(...) -> SHA-256 hex
-                      - genesisHash() -> defined constant
-                      Every write and every verify operation calls into this component;
-                      no other component computes a hash independently.
+Redaction              RedactionCommitmentService (com.auditlog.redaction) -- per-field salted
+                                                    commitments, tombstone format, verification
+                                                    reconciliation
 
-Security foundation    com.auditlog.security.AuthenticatedPrincipal,     [FORWARD-DECLARED ONLY --
-                      ResourceAuthorization (interface, no impl)          not wired into any request path]
+Domain core            HashChainService (com.auditlog.hash)
+                       - computeRecordHash(..., fieldCommitments, ...) -> SHA-256 hex
+                         (hashes commitments, not raw payload -- see Redaction approach below)
+                       - genesisHash() -> defined constant
+                       PayloadCanonicalizer -- deterministic JSON serialization for hashing
+                       Sha256 -- shared digest utility
 
-Persistence            Spring Data JPA repository + Flyway migration     [IMPLEMENTED]
-                      (V1__init_schema.sql), H2 (file-mode for dev/demo,
-                      in-memory for tests) — see DECISIONS.md ADR-001.
+Security               JwtService, JwtAuthenticationFilter, AuditSecurityContext, Roles
+(com.auditlog.security) RequestSizeLimitFilter (413 on oversized declared Content-Length)
+                       ResourceAuthorization interface -- still unimplemented/unused; tenant
+                                              scoping is done directly in each service instead
+                                              (docs/DECISIONS.md ADR-012)
+
+Config                 CorsConfig (explicit empty-origin policy), OpenApiConfig (Swagger UI
+                       Bearer-auth scheme)
+
+Persistence            Spring Data JPA repository + 4 Flyway migrations (V1-V4), H2 (file-mode
+                       for dev/demo, in-memory for tests) — see DECISIONS.md ADR-001.
 ```
 
-**Guardrail:** no controller in the system exposes an update or delete operation on audit records (`FR-A1`). This is enforced both by omission (no such endpoint is written) and by an automated test asserting no such mapping exists, so the guarantee survives future changes rather than depending on a convention being remembered.
+**Guardrail:** no controller in the system exposes an update or delete operation on audit records (`FR-A1`). Enforced both by omission and by `AppendOnlyApiTest`, which reflects over every controller (including the ones added in later milestones) and fails the build if a `PUT`/`PATCH`/`DELETE` mapping is ever added. Redaction and archival are POST operations that mutate a narrow, named set of fields (`AuditRecordEntity.applyRedaction()`/`archive()`) — never `record_hash`, `previous_hash`, `sequence_no`, `tenant_id`, or `field_commitments`.
 
 ## API design (high level)
 
-| Method | Path | Scenario | Purpose | Status |
-|---|---|---|---|---|
-| POST | `/audit/events` | A | Append a new event (`FR-A1`). Only write operation exposed. | IMPLEMENTED, TESTED |
-| GET | `/audit/events` | A | Query events with filters + keyset pagination (`FR-A2`). | IMPLEMENTED, TESTED |
-| GET | `/audit/events/{id}` | A | Fetch a single record. | IMPLEMENTED |
-| GET | `/audit/verify` | A | Walk the chain, report intact/broken + first violation (`FR-A4`). | IMPLEMENTED, TESTED |
-| GET | `/audit/verify?fromSeq=&toSeq=` | A | Range verification (secondary, only if time allows). | NOT IMPLEMENTED |
-| (admin/scheduled trigger) | Archival operation | B | Transition eligible records to `ARCHIVED` per retention policy (`FR-B1`). | NOT IMPLEMENTED |
-| POST | `/audit/events/{id}/redact` (path indicative) | B | Redact flagged fields in a record's payload (`FR-B2`). | NOT IMPLEMENTED |
-| GET | `/audit/export?resourceId=` / `?actorId=` | B | Export a self-contained, verifiable bundle (`FR-B3`). | NOT IMPLEMENTED |
-| GET | `/audit/compliance-report` (path indicative) | C | Thin reporting layer over the query/export services, scoped per `docs/scenario-c.md` (`FR-C2`). | NOT IMPLEMENTED |
+| Method | Path | Scenario | Purpose | Auth | Status |
+|---|---|---|---|---|---|
+| POST | `/audit/events` | A | Append a new event (`FR-A1`). Optional `Idempotency-Key` header. | Any authenticated caller | IMPLEMENTED, TESTED |
+| GET | `/audit/events` | A | Query events, tenant-scoped, keyset pagination (`FR-A2`). | Any authenticated caller | IMPLEMENTED, TESTED |
+| GET | `/audit/events/{id}` | A | Fetch a single record; 404 (not 403) for cross-tenant. | Any authenticated caller | IMPLEMENTED, TESTED |
+| GET | `/audit/verify` | A | Walk the chain, report intact/broken + first violation (`FR-A4`). | `ROLE_AUDITOR` | IMPLEMENTED, TESTED |
+| POST | `/audit/events/{id}/redact` | B | Redact named top-level payload fields (`FR-B2`). | Same tenant or `ROLE_AUDITOR` | IMPLEMENTED, TESTED |
+| POST | `/audit/retention/apply` | B | Archive records past the configured retention window (`FR-B1`). | `ROLE_AUDITOR` | IMPLEMENTED, TESTED |
+| GET | `/audit/export` | B | Self-contained, signed, verifiable bundle by `actorId`/`resourceId` (`FR-B3`). | Any authenticated caller (`ROLE_AUDITOR` for cross-tenant) | IMPLEMENTED, TESTED |
+| GET | `/audit/compliance-report` | C | Allow-listed resource types, mandatory time range (`FR-C2`). | `ROLE_COMPLIANCE_OFFICER` | IMPLEMENTED, TESTED |
+| POST | `/dev/auth/token` | — | Issues a JWT for any requested subjectId/tenantId/roles, zero verification. **NOT real auth** — see `docs/SECURITY.md`. | Public | IMPLEMENTED, TESTED |
+| GET | `/actuator/health` | — | Liveness check. | Public | IMPLEMENTED, TESTED |
+| GET | `/swagger-ui/index.html`, `/v3/api-docs` | — | Interactive/machine-readable API documentation. | Public (calls made through it still need a token) | IMPLEMENTED, TESTED |
 
-Pagination for `GET /audit/events` uses keyset pagination: `pageSize` (default 50, capped at 200 server-side regardless of what's requested) and `afterSequenceNo` (cursor) query parameters. The response includes `nextCursor` and `hasMore`. Implemented in `AuditQueryService` by fetching `pageSize + 1` rows to detect `hasMore` without a separate `COUNT` query.
+Pagination for `GET /audit/events` and `/audit/compliance-report` uses keyset pagination: `pageSize` (default 50, capped at 200) and `afterSequenceNo` (cursor). `AuditEventPageResponse` includes `nextCursor`/`hasMore`, computed by fetching `pageSize + 1` rows to avoid a separate `COUNT` query.
 
-Request/response DTOs (`com.auditlog.dto`) are deliberately separate types from `AuditRecordEntity` — the entity is never returned directly from a controller.
+Request/response DTOs (`com.auditlog.dto`) are deliberately separate types from `AuditRecordEntity` — the entity is never returned directly from a controller, and `AuditEventResponse` deliberately never includes `salt`/`fieldCommitments` (would enable offline brute-forcing of low-entropy redacted values — `docs/DECISIONS.md` ADR-003).
+
+**Not implemented:** `GET /audit/verify?fromSeq=&toSeq=` (range verification, was always secondary/optional).
 
 ## Data model
 
-Single table, `audit_record`, is sufficient for this prototype — there is no requirement driving a multi-table design, and one table keeps the hash-chain invariant (each row's hash covers a fixed, well-understood set of columns) easy to reason about.
+Single table, `audit_record`, built up across four Flyway migrations rather than created all at once — each migration corresponds to the milestone that needed its columns, which is itself part of the evidence that this was built incrementally, not designed once and implemented in one shot.
 
-**Phase 1 note:** `V1__init_schema.sql` creates only the columns Scenario A actually needs (through `previous_hash` below), plus the `chain_head` singleton table used for concurrency control (`DECISIONS.md` ADR-011). The `status`, `redacted_fields`, `field_commitments`, and `salt` columns are **not yet created** — they are Scenario B's design (still accurate as a forward design below) and will arrive in a later Flyway migration when that work starts, rather than being added speculatively now.
+| Column | Type | Added | Notes |
+|---|---|---|---|
+| `id` | UUID, PK | V1 | Server-generated, not sequential/guessable. |
+| `sequence_no` | BIGINT, unique, monotonic | V1 | The chain's order of truth (`FR-A3`) — assigned atomically via the `chain_head` lock (ADR-011). |
+| `event_type`, `actor_id`, `resource_type`, `resource_id` | VARCHAR(200), indexed | V1 | `FR-A1`, `FR-A2`. |
+| `payload` | CLOB (JSON, via `@Lob` + `JsonNode<->String` converter) | V1 | Stored exactly as received; **mutable only via `applyRedaction()`** (V3+). |
+| `event_timestamp` | TIMESTAMP WITH TIME ZONE | V1 | Caller-supplied, required, millisecond-truncated before hashing (ADR-002). |
+| `recorded_at` | TIMESTAMP WITH TIME ZONE | V1 | Server-assigned truth of "when we saw this"; retention eligibility is based on this, not `event_timestamp` (ADR-004). |
+| `record_hash`, `previous_hash` | VARCHAR(64) | V1 | SHA-256 hex. Since V3, computed over `field_commitments`, not the raw payload (see Redaction approach). |
+| `tenant_id` | VARCHAR(200), indexed | V2 | Part of the hashed content; derived only from the JWT, never the request body (ADR-012). |
+| `salt` | VARCHAR(64) | V3 | Per-record random salt for the commitment scheme. Immutable. **Never exposed via the API.** |
+| `field_commitments` | CLOB (JSON) | V3 | `fieldName -> commitment` for every top-level payload field. Immutable, including through redaction — this is what makes redaction safe. **Never exposed via the API.** |
+| `status` | VARCHAR(20) enum (`ACTIVE`/`ARCHIVED`/`REDACTED`) | V3 | Single-valued; archival never overwrites an existing `REDACTED` status (ADR-004 addendum). |
+| `redacted_fields`, `redacted_at`, `redacted_by` | CLOB (JSON array), TIMESTAMP, VARCHAR | V3 | Set only by `applyRedaction()`. |
+| `idempotency_key` | VARCHAR(200), unique with `tenant_id` | V4 | Optional; NULLs are distinct under standard unique-index semantics, so omitting it is unaffected. |
 
-| Column | Type (as implemented) | Notes |
-|---|---|---|
-| `id` | UUID, PK | Server-generated. Not sequential/guessable, so it can't be used to infer record count or chain position. |
-| `sequence_no` | BIGINT, unique, monotonic | The chain's order of truth (`FR-A3`) — assigned atomically at insert via the `chain_head` lock (ADR-011). See `DECISIONS.md` ADR-002 for why this, not `event_timestamp`, governs ordering. |
-| `event_type` | VARCHAR(200) | e.g. `USER_LOGIN` (`FR-A1`). |
-| `actor_id` | VARCHAR(200), indexed | `FR-A1`, `FR-A2`. |
-| `resource_type` | VARCHAR(200), indexed | `FR-A1`, `FR-A2`. |
-| `resource_id` | VARCHAR(200), indexed (composite with `resource_type`) | `FR-A1`, `FR-A2`. |
-| `payload` | CLOB (JSON text, via `@Lob` + a `JsonNode<->String` `AttributeConverter`) | Structured event detail (`FR-A1`), stored exactly as received -- canonicalization happens only in-memory when hashing, never to what's persisted. |
-| `event_timestamp` | TIMESTAMP WITH TIME ZONE | Caller-supplied, **required**, truncated to millisecond precision before hashing/persisting (`FR-A1`; see ADR-002's implementation addendum). |
-| `recorded_at` | TIMESTAMP WITH TIME ZONE | Server-assigned, always, same millisecond truncation — the audit truth of "when the service saw this." |
-| `record_hash` | VARCHAR(64) | SHA-256 hex of the record's canonical content (`FR-A3`). (Implemented as `VARCHAR` rather than `CHAR` -- see `DECISIONS.md` ADR-001 area for the Hibernate schema-validation reason; functionally identical for a fixed-length hex string.) |
-| `previous_hash` | VARCHAR(64) | Hash of the prior record, or the genesis constant for the first record (`FR-A3`). |
-
-Not yet implemented (Scenario B design, unchanged from the original proposal):
-
-| Column | Type | Notes |
-|---|---|---|
-| `status` | ENUM(`ACTIVE`, `ARCHIVED`, `REDACTED`) | `FR-B1`, `FR-B2`. |
-| `redacted_fields` | JSON, nullable | Metadata about what was redacted, when, and why (`FR-B2`). |
-| `field_commitments` | JSON, nullable | Per-field salted hash for fields flagged as redactable, computed at write time (`FR-B2`; see below). |
-| `salt` | VARCHAR, nullable | Per-record random salt used in the commitment scheme. |
-
-**`chain_head` (implemented, Phase 1):** a single seeded row (`id = 1`, `last_sequence_no`, `last_record_hash`) used purely as a pessimistic-lock anchor for concurrency control — not part of the audit trail itself. See `DECISIONS.md` ADR-011.
+**`chain_head` (V1):** a single seeded row (`id = 1`) used purely as the pessimistic-lock anchor for concurrency control (ADR-011) — not part of the audit trail itself.
 
 ### Genesis record
 
-`previous_hash` for the first record in the chain is a defined constant (e.g. `SHA-256("AUDIT-CHAIN-GENESIS-v1")`), documented in code — never null and never all-zeros, both of which would be ambiguous with "not yet computed."
+`previous_hash` for the first record is a defined constant (`SHA-256("AUDIT-CHAIN-GENESIS-v1")`) — never null, never all-zeros.
 
 ## Hash-chain approach
 
-**Content covered by `record_hash`:** a fixed, ordered set of fields — `eventType`, `actorId`, `resourceType`, `resourceId`, the canonicalized `payload`, `eventTimestamp`, `sequenceNo`, and `previousHash`. Mutable bookkeeping fields (`id`, `status`, `redacted_fields`) are deliberately excluded, since they need to change later (archival, redaction) without invalidating the hash.
+**Content covered by `record_hash`:** `tenantId`, `eventType`, `actorId`, `resourceType`, `resourceId`, the canonicalized **field commitments** (not the raw payload — see below), `eventTimestamp`, `sequenceNo`, `previousHash`.
 
-**Canonicalization:** the payload is a structured JSON object, and hashing requires a single deterministic byte representation of it — object key order, number formatting, and encoding must be fixed, not left to whatever a JSON library happens to produce on a given run. The design commits to a canonical serialization step (sorted keys, fixed encoding) as part of `HashChainService.canonicalize()`, applied before hashing, and covered directly by unit tests that check hash stability across differently-ordered-but-equivalent payload inputs.
+**Canonicalization:** `PayloadCanonicalizer` sorts JSON object keys recursively (TreeMap-based), so a semantically-identical payload with reordered keys always hashes the same.
 
-**Write path (as implemented, `AuditEventService.append()`):**
-1. Take a pessimistic lock on the `chain_head` row (see Concurrency below).
-2. Determine the next `sequence_no` and the `previous_hash` (the locked head's `last_record_hash`, or the genesis hash if `last_sequence_no == 0`).
-3. Truncate `event_timestamp`/`recorded_at` to millisecond precision (see `DECISIONS.md` ADR-002 addendum), canonicalize the payload, and compute `record_hash`.
-4. Persist the new record; advance `chain_head` to the new `sequence_no`/`record_hash` within the same transaction.
+**Write path (`AuditEventService.append()`):**
+1. Resolve `tenantId` from the JWT (never the request body — ADR-012).
+2. Lock `chain_head` (pessimistic, `SELECT ... FOR UPDATE`).
+3. If an `Idempotency-Key` header was supplied and a matching record already exists for this tenant, return it immediately (200, not 201) — checked *after* the lock, so this is race-safe for free (ADR-014).
+4. Determine `sequence_no`/`previous_hash`; truncate timestamps to millisecond precision (ADR-002 addendum).
+5. Generate a random salt; compute a commitment for every top-level payload field (`RedactionCommitmentService`); compute `record_hash` from the commitments.
+6. Persist; advance `chain_head`.
 
-**Concurrency (IMPLEMENTED, TESTED — see `DECISIONS.md` ADR-011):** a single-row `chain_head` table is locked via `SELECT ... FOR UPDATE` (Spring Data `@Lock(PESSIMISTIC_WRITE)`) for the duration of each write transaction, serializing sequence/hash assignment across concurrent writers. Validated by `ConcurrentAppendTest`: 20 concurrent writers produce a chain with 20 contiguous, correctly-linked records. Scope note: this tests concurrent threads within one application instance, not literal multi-process contention — see `docs/EVALUATION_CLOSURE_MATRIX.md` item 12.
+**Concurrency (TESTED — ADR-011):** the `chain_head` lock serializes all writes. `ConcurrentAppendTest`: 20 concurrent writers, 20 contiguous correctly-linked records. Scope: concurrent threads within one instance, not literal multi-process contention (`docs/EVALUATION_CLOSURE_MATRIX.md` item 12).
 
 ## Verification approach (`FR-A4`) — IMPLEMENTED, TESTED
 
-`ChainVerificationService.verify()` walks records in `sequence_no` order and, for each one, in this order:
-1. Compares the stored `previous_hash` to the actual `record_hash` of the prior record in sequence (or the genesis hash, for the first record). A mismatch is a **`LINKAGE_BROKEN`** violation.
-2. Recomputes `record_hash` from the record's stored, canonicalized content and compares it to the stored value. A mismatch is a **`CONTENT_MISMATCH`** violation.
-3. Checks `sequence_no` is exactly one more than the previous record's. A gap is a **`MISSING_RECORD`** violation.
+`ChainVerificationService.verify()` (requires `ROLE_AUDITOR`) walks records in `sequence_no` order and, per record:
+1. **Linkage:** stored `previous_hash` vs. the prior record's actual `record_hash` (or genesis). Mismatch → `LINKAGE_BROKEN`.
+2. **Content:** recomputed `record_hash` (from stored `field_commitments`) vs. stored value. Mismatch → `CONTENT_MISMATCH`.
+3. **Sequence:** contiguity check. Gap → `MISSING_RECORD`.
+4. **Field-commitment reconciliation** (`RedactionCommitmentService.verifyFieldCommitments()`): for each non-redacted field, recompute its commitment from the *current raw payload value* and compare to what's stored — catches a raw-payload tamper that leaves `record_hash` itself unchanged, since `record_hash` no longer depends on raw values directly (see Redaction approach). For each redacted field, confirm the tombstone's embedded commitment matches what's stored — catches a forged/faked redaction. Mismatches → `CONTENT_MISMATCH`.
 
-**Why linkage is checked before content:** `previous_hash` is itself one of the fields that feeds a record's own `record_hash` computation. Directly tampering `previous_hash` in the data store therefore *also* makes the content-hash recomputation fail (since the recomputed hash now uses the tampered `previous_hash` value as input, which no longer matches what was used to compute the originally-stored `record_hash`). Checking linkage first reports the more specific, structural diagnosis (`LINKAGE_BROKEN`) for that case, while a pure payload tamper (content changed, `previous_hash` untouched) still correctly surfaces as `CONTENT_MISMATCH`. This ordering was corrected during Phase 1 testing after `TamperDetectionTest.detectsIncorrectPreviousHash` initially reported `CONTENT_MISMATCH` instead of the expected `LINKAGE_BROKEN` — both were technically true simultaneously, but `LINKAGE_BROKEN` is the more actionable diagnosis for that specific tamper.
+Linkage is checked before content deliberately: `previous_hash` itself feeds `record_hash`'s computation, so tampering it also breaks the content check — checking linkage first gives the more specific diagnosis.
 
-All three violation types were exercised and confirmed both via the automated integration suite and a live manual demo (write via API → verify intact → tamper directly in the H2 data store via the H2 shell, bypassing the application → verify again → `CONTENT_MISMATCH` reported with the correct `sequenceNo` and `recordId`). See `docs/TESTING.md`.
+All violation types confirmed via both the automated suite and repeated live manual demos (write → verify intact → tamper directly in the H2 file via the H2 shell, bypassing the app entirely → verify again → violation reported with the correct `sequenceNo`/`recordId`/`detail`).
 
-`ARCHIVED` (`FR-B1`) and `REDACTED` (`FR-B2`) record handling is design-only — not implemented in Phase 1, since no record can yet have either status.
+**Known limitation, not addressed:** deleting the *newest* record(s) from the tail is undetectable — nothing after the deleted tail reveals a broken link. Needs an external chain-head anchor (`docs/EVALUATION_CLOSURE_MATRIX.md` item 14, `ARC-02`).
 
-**Known limitation (unchanged from original design, not addressed in Phase 1):** deleting the *newest* record(s) from the tail is not detectable — there is nothing after the deleted tail to reveal a broken link. This requires an external chain-head anchor; tracked as `docs/EVALUATION_CLOSURE_MATRIX.md` item 14 (`ARC-02`).
+## Redaction approach (`FR-B2`) — IMPLEMENTED, TESTED (docs/DECISIONS.md ADR-003)
 
-## Redaction approach (design level, `FR-B2`) — NOT IMPLEMENTED (Scenario B, not started)
+**The problem:** `record_hash` was originally going to cover the raw payload directly — but then redacting a value would always change the hash, making a legitimate redaction indistinguishable from tampering.
 
-**The problem:** `record_hash` is computed over the original payload. Naively removing or blanking a sensitive value after the fact changes the content the hash covers, so the record would appear tampered — the opposite of the intended outcome.
+**The scheme:** at write time, every top-level payload field gets a salted commitment (`commitment = SHA256(salt|fieldName|canonicalValue)`), computed unconditionally — there's no API surface for pre-declaring which fields are redactable, so any field can be redacted later. `HashChainService` hashes the **commitments**, never the raw payload. `POST /audit/events/{id}/redact` replaces a field's raw value with a tombstone embedding its (unchanged) commitment (`"[REDACTED:sha256:<commitment>]"`), sets `status = REDACTED`, records `redacted_fields`/`redacted_at`/`redacted_by` — and **never recomputes `record_hash`**, since `record_hash` never depended on the raw value to begin with.
 
-**Chosen approach — field-commitment scheme:**
-1. At write time, for any payload field flagged as potentially redactable, compute a salted commitment: `commitment = SHA-256(salt + fieldValue)`. The salt is random per record. These commitments are included in the content that feeds `record_hash`, so they are covered by tamper-evidence from the moment the record is written — not bolted on later.
-2. When a field is redacted: the sensitive value in `payload` is replaced with a tombstone marker that embeds the field's precomputed commitment (e.g. `"[REDACTED:sha256:<commitment>]"`); `status` becomes `REDACTED`; `redacted_fields` records which fields, when, and why. **`record_hash` is never recomputed** — it still reflects the original content's commitments, which is what makes this safe.
-3. During verification, a `REDACTED` record is checked by confirming the current payload's tombstone markers match the stored `field_commitments`, and that the non-redacted fields together with the stored commitments (not the raw values) still reproduce `record_hash`. This is what lets a redacted record continue to pass `/audit/verify` while the underlying sensitive value is genuinely gone from the stored payload.
+**The gap this creates, and how it's closed:** because `record_hash` no longer covers raw payload values, recomputing it alone can't detect a raw value being tampered without its commitment being updated to match. `RedactionCommitmentService.verifyFieldCommitments()` (used by verification, above) closes this independently.
 
-**Documented limitation:** only fields flagged as redactable at write time can later be redacted without breaking the chain — this is a deliberate constraint of the scheme, not an oversight, and follows directly from needing the commitment to exist before the hash is computed.
+**Scope limitation:** top-level payload fields only — nested object/array field redaction was judged disproportionate effort for the time available.
 
-**Alternative considered and not chosen:** encrypting the value at rest and treating redaction as an access-control problem (hide the decrypted value from unauthorized viewers) rather than a data-mutation problem. Rejected as the primary approach because the original value still exists at rest — it does not satisfy a genuine erasure/privacy requirement, only a display-time one. Recorded as an alternative in `DECISIONS.md` (ADR-003) since it is materially simpler and may be the right trade-off under tighter time constraints.
+**Alternative considered and rejected:** encrypt-at-rest + access-control redaction. Simpler, but the original value still exists in storage, so it satisfies a display-time privacy control, not a genuine erasure requirement.
+
+## Export approach (`FR-B3`) — IMPLEMENTED, TESTED (docs/DECISIONS.md ADR-013)
+
+`GET /audit/export?resourceId=`/`?actorId=` (at least one required) builds a bundle: every matching record (with `recordHash`/`previousHash`), a `chainContext` (`firstSequenceNo`, `lastSequenceNo`, `hashOfLastRecordBeforeRange` — the first exported record's `previousHash`, anchoring it into the larger chain), and a **signature**: `SHA256withECDSA` over a canonical manifest string built purely from the bundle's own published fields. A recipient needs only the exported JSON and the published public key to verify — no server access. The signing key pair is generated fresh in memory on every app startup (never persisted/committed — ADR-013), so a signature does not survive a restart; a documented, deliberate trade-off, not an oversight.
+
+**Not addressed:** verifying a bundle is genuinely part of the *full* live chain (vs. an internally-consistent subset) would need a periodically published chain root (Merkle-style) — scoped out, unchanged from the original design.
+
+## Retention approach (`FR-B1`) — IMPLEMENTED, TESTED (docs/DECISIONS.md ADR-004)
+
+`POST /audit/retention/apply` (`ROLE_AUDITOR`, optional `?windowDays=` override) soft-deletes: `AuditRecordEntity.archive()` flips `ACTIVE → ARCHIVED` for records where `recorded_at` (server truth, not the caller-supplied `event_timestamp`) is older than the window. Never overwrites an existing `REDACTED` status. No hard delete, no scheduler (not required by the assignment) — a manual admin endpoint. `/audit/verify` needs no special handling for archived records: nothing about their stored content changes.
+
+## Compliance reporting approach (`FR-C2`, Scenario C) — IMPLEMENTED, TESTED
+
+See `docs/scenario-c.md` for the full clarification. `GET /audit/compliance-report` (`ROLE_COMPLIANCE_OFFICER`, a role distinct from `AUDITOR`) requires `from`/`to` explicitly (never defaulted), scopes to a configurable "client account data" resource-type allow-list, and is cross-tenant by default like `AUDITOR`. Genuinely thin: reuses `AuditEventPageResponse` and the same keyset-pagination pattern as `AuditQueryService`.
 
 ## Cross-cutting concerns
 
-- **Security posture — NOT IMPLEMENTED beyond forward-declared types.** `com.auditlog.security.AuthenticatedPrincipal` (record) and `ResourceAuthorization` (interface, no implementation) exist so later service signatures don't require a larger rewrite, but nothing in Phase 1 constructs or consults them — no authentication or authorization is enforced on any endpoint. See `docs/SECURITY.md` for the full, honest statement of this gap and `docs/EVALUATION_CLOSURE_MATRIX.md` items 3 and 16.
-- **SQL injection:** all queries go through Spring Data JPA / parameterized queries — no string-concatenated SQL. Confirmed by inspection of `AuditRecordRepository` (JPQL with bound `:param` placeholders throughout).
-- **Concurrency risk:** RESOLVED and TESTED — see Concurrency under Hash-chain approach above and `DECISIONS.md` ADR-011.
-- **Bundle export integrity (`FR-B3`):** NOT IMPLEMENTED (Scenario B). Design unchanged from the original proposal: the export bundle would include each record's hash and linkage fields plus a bundle-level integrity value (e.g., a hash over the sorted set of included record hashes), letting a recipient verify internal consistency and that the bundle wasn't altered after export. Verifying that the bundle's contents are genuinely part of the *full* chain (not just internally consistent) would require either a periodically published chain root (Merkle-style) or trusting the exporting system — recorded as a scoped limitation for when this is built.
+- **Security posture — IMPLEMENTED.** JWT authentication (`JwtAuthenticationFilter`) on every endpoint except the dev token endpoint, health check, and Swagger UI/docs pages. Tenant isolation on every business endpoint (`docs/DECISIONS.md` ADR-012). `com.auditlog.security.ResourceAuthorization` remains an unimplemented, unused interface — tenant scoping was done directly in each service instead, since it's a simpler, more direct check than the generic resource-ACL shape that interface was designed for. See `docs/SECURITY.md` for the full picture, including what's still a real gap (TLS, full immutable DB permissions).
+- **SQL injection:** all queries go through Spring Data JPA / parameterized JPQL — no string-concatenated SQL.
+- **Concurrency risk:** resolved and tested (ADR-011).
+- **Request/body limits, CORS, idempotency:** implemented (ADR-014).
+- **Operational monitoring:** `/actuator/health` only — deliberately minimal, not a claim of full observability.

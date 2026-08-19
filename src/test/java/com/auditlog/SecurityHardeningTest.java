@@ -80,4 +80,14 @@ class SecurityHardeningTest extends AbstractApiIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).contains("UP");
     }
+
+    @Test
+    void swaggerUiIsPubliclyReachableButRealEndpointsStillRequireAuth() {
+        ResponseEntity<String> apiDocs = restTemplate.getForEntity(baseUrl("/v3/api-docs"), String.class);
+        assertThat(apiDocs.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(apiDocs.getBody()).contains("/audit/events");
+
+        ResponseEntity<String> unauthenticatedApiCall = restTemplate.getForEntity(baseUrl("/audit/events"), String.class);
+        assertThat(unauthenticatedApiCall.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
 }
