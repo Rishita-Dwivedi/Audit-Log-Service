@@ -61,6 +61,22 @@ Tracks actual implementation progress, phase by phase, against the plan in `docs
 
 **Not done in this milestone:** nested-field redaction (documented scope limitation, `ADR-003`); retention/archival, export, compliance (Milestones 9-10); the remaining closure-matrix P0/P1 items (JaCoCo, request limits, CORS, secrets, TLS, DB permissions, fault-injection tests, reproducible CI evidence -- Milestones 11-12).
 
+## Milestone 9 — Retention / export — COMPLETE (2026-08-20)
+
+**Scope:** `FR-B1` (retention/archival) and `FR-B3` (bulk export), plus closure-matrix item 15/26 (`ARC-03`, signed export manifests) and extending tenant authorization (item 3/21) to both new endpoints.
+
+**What was built:**
+- `RetentionService`/`RetentionController` (`POST /audit/retention/apply`, `AUDITOR`-only, no scheduler): soft-delete via `AuditRecordEntity.archive()` (`ACTIVE` → `ARCHIVED` only, never overwrites `REDACTED`), eligibility based on `recorded_at` (server truth, not caller-supplied `event_timestamp`).
+- `ExportSigningService` (`com.auditlog.export`): EC P-256 / `SHA256withECDSA` asymmetric signing, fresh key pair per application startup (never persisted or committed -- documented trade-off in `ADR-013`).
+- `ExportBundleService`/`ExportController` (`GET /audit/export`): builds a bundle scoped by `actorId`/`resourceId` (at least one required) and tenant, with a `chainContext` anchoring the first exported record via `hashOfLastRecordBeforeRange`, and a signature a recipient can verify using only the bundle's own published fields plus the published public key.
+- 12 new tests: `RetentionTest` (6), `ExportTest` (6). Total: 71 tests, all passing.
+
+**No new bugs found this milestone** -- both features worked on the first `mvn test` run, continuing the pattern from Milestone 8 that upfront design work (working out the canonical-manifest reproducibility and the redaction/archival status interaction on paper first) avoids implementation surprises.
+
+**Evidence:** `mvn test` → `Tests run: 71, Failures: 0, Errors: 0` (BUILD SUCCESS). Live run: exported a real signed bundle via `curl` (inspected `recordHash`/`chainContext`/`signature` fields), applied retention with `windowDays=-1` and confirmed `archivedCount: 1`.
+
+**Not done in this milestone:** compliance scenario (Milestone 10); the remaining closure-matrix P0/P1 items (JaCoCo, request limits, CORS, secrets, TLS, DB permissions, fault-injection tests, reproducible CI evidence -- Milestones 11-12); hard archival (`ADR-004` alternative, not pursued); Merkle-root chain-inclusion proof for exports (`ADR-013`, scoped limitation, unchanged from the original design).
+
 ## Remaining milestones — NOT STARTED
 
-Per your roadmap, in order: Retention/export (Milestone 9) → Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-8 above.
+Per your roadmap, in order: Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestones 7-9 above.

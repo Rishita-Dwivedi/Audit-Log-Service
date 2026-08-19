@@ -32,7 +32,7 @@ No application code has been written as part of producing this document. No item
 |---|---|---|---|---|
 | 1 | ATT-01 | Delivery commit identifiability | P0 | Open — Not Started |
 | 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Open — Not Started |
-| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance -- not built yet) |
+| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify/redaction/export); Open (compliance -- not built yet) |
 | 4 | SEC-06 | Replay/idempotency protection | P1 | Open — Not Started |
 | 5 | SEC-06 | Global request/body limits | P1 | Open — Not Started |
 | 6 | SEC-06 | Explicit CORS policy | P1 | Open — Not Started |
@@ -44,18 +44,18 @@ No application code has been written as part of producing this document. No item
 | 12 | TEST-06 | Multi-instance/concurrent contention testing | P1 | Open — Design Pending |
 | 13 | TEST-08 | Reproducible CI/test artifacts & Testcontainers reporting | P1 | Open — Design Pending |
 | 14 | ARC-02 | External chain-head anchor | P2 | Open — Design Pending (feasibility to be assessed) |
-| 15 | ARC-03 | Signed export manifests | P2 | Open — Not Started |
+| 15 | ARC-03 | Signed export manifests | P2 | Implemented, Tested |
 | 16 | SEC-02 | Invalid/expired/forged/missing authentication tests | Gap | Implemented, Tested |
 | 17 | SEC-05 | Oversized/malformed request body tests | Gap | Open — Blocked by #5 |
 | 18 | SEC-08 | PII/log-injection/security-event tests | Gap | Open — Design Pending |
 | 19 | TEST-01 | Endpoint-to-requirement test matrix | Gap | Open — Not Started |
 | 20 | TEST-03 | Expanded malformed/boundary testing | Gap | Open — Not Started |
-| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance) |
+| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify/redaction/export); Open (compliance) |
 | 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Open — Blocked by #4 |
 | 23 | TEST-06 | Fault injection, rollback, idempotency tests (combined) | Gap | Open — Blocked by #4, #11 |
 | 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Open — Blocked by #13 |
 | 25 | ARC-02 | External anchor trade-off documentation | Gap | Open — Blocked by #14 |
-| 26 | ARC-03 | Export signature trust model documentation | Gap | Open — Blocked by #15 |
+| 26 | ARC-03 | Export signature trust model documentation | Gap | Implemented, Tested |
 
 ---
 
@@ -112,7 +112,7 @@ No application code has been written as part of producing this document. No item
 | Documentation evidence | `docs/DECISIONS.md` ADR-012; `docs/SECURITY.md` (tenant isolation section). |
 | Runtime/reproduction evidence | Live manual run (2026-08-20): two tenants via `/dev/auth/token`, cross-tenant query returned `{"items":[]}`, `ROLE_USER` calling `/audit/verify` got 403, `ROLE_AUDITOR` got 200 with `chainIntact: true`. |
 | Git commit | Milestone 7 commit (see `git log`). |
-| Status | Implemented, Tested (query/fetch/verify/redaction) — Open for export/compliance until Milestones 9-10 |
+| Status | Implemented, Tested (query/fetch/verify/redaction/export) — Open for compliance until Milestone 10 |
 | Reviewer sign-off | Pending |
 
 ---
@@ -328,15 +328,15 @@ No application code has been written as part of producing this document. No item
 | Previous evaluation ID | ARC-03 |
 | Problem identified | The previous evaluation found an unsigned export trust boundary: the bundle-level integrity value described in `docs/ARCHITECTURE.md` (a hash over included record hashes) is unsigned, so a recipient cannot verify who produced the bundle, only that its stated contents are internally consistent. |
 | Required remediation | Sign export manifests; implement signature verification; document trust model and key management assumptions. |
-| Design decision | Not yet decided. New ADR required covering the signing mechanism (e.g., asymmetric signature over the export manifest/integrity value), key management for the signing key (intersects with items 7 and 9, secret management and DB-identity permissions), and how a recipient verifies the signature independently. |
-| Implementation task | None yet. |
-| Unit test | Planned: signature generation/verification logic tested in isolation once a scheme is chosen. |
-| Integration test | Planned: an exported bundle's signature verifies successfully; a tampered bundle fails signature verification. |
-| Security test | Planned: verify a bundle with a stripped or forged signature is rejected by the verification logic. |
-| Documentation evidence | To be added: new ADR in `docs/DECISIONS.md`; updated Bulk export section in `docs/ARCHITECTURE.md`. See also item 26 (trust-model documentation for this same item). |
-| Runtime/reproduction evidence | To be produced: reproduction script exporting a bundle, verifying its signature, then showing a tampered copy fails verification. |
-| Git commit | None — no commits exist in the repository yet. |
-| Status | Open — Not Started |
+| Design decision | `docs/DECISIONS.md` ADR-013 (Accepted): asymmetric `SHA256withECDSA` (EC P-256) signing via `ExportSigningService`. Key pair generated fresh per application startup, kept in memory only (never committed, never persisted) -- documented trade-off: signatures don't survive an app restart. |
+| Implementation task | `ExportSigningService` (sign/verify/key encoding), `ExportBundleService.canonicalManifest()` (the reproducible manifest string, `public static` so it documents exactly what a recipient reconstructs), wired into `GET /audit/export`. |
+| Unit test | Covered at integration level (see below) -- signing/verification exercised through the real endpoint rather than in isolation, since the interesting behavior is end-to-end reproducibility from published fields. |
+| Integration test | `ExportTest.exportBundleSignatureVerifiesIndependently`: reconstructs the manifest from only the bundle's own JSON and verifies with only the published public key -- no server access. `ExportTest.tamperedBundleFailsSignatureVerification`: a modified record hash fails verification against the original signature. |
+| Security test | Same two tests above are this item's dedicated security coverage. |
+| Documentation evidence | `docs/DECISIONS.md` ADR-013 (trust model, what a signature does/doesn't prove, key-lifecycle limitation). See also item 26. |
+| Runtime/reproduction evidence | Live manual run (2026-08-20): exported a real bundle via `curl`, inspected `signature.algorithm`/`publicKeyBase64`/`signatureBase64` fields. |
+| Git commit | Milestone 9 commit (see `git log`). |
+| Status | Implemented, Tested |
 | Reviewer sign-off | Pending |
 
 ---
@@ -448,7 +448,7 @@ No application code has been written as part of producing this document. No item
 | Documentation evidence | `docs/ENDPOINT_TEST_MATRIX.md`, `docs/DECISIONS.md` ADR-012. |
 | Runtime/reproduction evidence | Live manual run (2026-08-20): tenant-B caller querying `/audit/events` after tenant-A wrote a record returned `{"items":[]}`. |
 | Git commit | Milestone 7 commit (see `git log`). |
-| Status | Implemented, Tested (query/fetch/verify/redaction); Open (export/compliance) |
+| Status | Implemented, Tested (query/fetch/verify/redaction/export); Open (compliance) |
 | Reviewer sign-off | Pending |
 
 ### 22. TEST-05 — Replay/duplicate semantics tests
@@ -530,13 +530,13 @@ No application code has been written as part of producing this document. No item
 | Previous evaluation ID | ARC-03 |
 | Problem identified | The previous evaluation found this only partially addressed: the export signature trust model was not documented. |
 | Required remediation | Document export signature trust model. |
-| Design decision | No separate design decision — this is the documentation counterpart to item 15; depends on item 15's ADR existing first, at which point the trust model (who holds the signing key, how a recipient obtains/trusts the corresponding verification key, what a valid signature does and does not prove) is written up as part of that same ADR. |
+| Design decision | Documentation counterpart to item 15 — closed together with it. `docs/DECISIONS.md` ADR-013's "Trust model, stated explicitly" section covers: who holds the signing key (this service, in-memory, per-instance), how a recipient obtains the verification key (published in every export response, not out-of-band), and what a valid signature does/doesn't prove (provenance + tamper-detection since signing; NOT inclusion in the full live chain, unchanged limitation from the original unsigned design). |
 | Implementation task | None — documentation task. |
 | Unit test | N/A |
 | Integration test | N/A |
 | Security test | N/A |
-| Documentation evidence | To be added: trust-model section within item 15's ADR in `docs/DECISIONS.md`. |
+| Documentation evidence | `docs/DECISIONS.md` ADR-013. |
 | Runtime/reproduction evidence | N/A |
-| Git commit | None — no commits exist in the repository yet. |
-| Status | Open — Blocked by #15 |
+| Git commit | Milestone 9 commit (see `git log`). |
+| Status | Implemented, Tested |
 | Reviewer sign-off | Pending |

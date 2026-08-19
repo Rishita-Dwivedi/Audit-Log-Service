@@ -161,6 +161,19 @@ public class AuditRecordEntity {
         return newlyRedacted;
     }
 
+    /**
+     * Soft-delete/archival (docs/DECISIONS.md ADR-004): only ever flips ACTIVE -> ARCHIVED.
+     * Deliberately a no-op if the record is already REDACTED -- redaction is considered the
+     * more informative status to keep displaying (docs/DECISIONS.md ADR-004 addendum);
+     * archival eligibility is still independently determinable from recordedAt regardless of
+     * what status currently shows.
+     */
+    public void archive() {
+        if (this.status == AuditRecordStatus.ACTIVE) {
+            this.status = AuditRecordStatus.ARCHIVED;
+        }
+    }
+
     public Set<String> redactedFieldNames() {
         Set<String> names = new LinkedHashSet<>();
         if (redactedFields != null) {

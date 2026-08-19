@@ -20,6 +20,8 @@ server:
 audit:
   chain:
     genesis-seed: "AUDIT-CHAIN-GENESIS-v1"
+  retention:
+    window-days: 90
   security:
     jwt:
       # Dev-only HMAC secret. Real deployment needs a secret-manager-sourced key or, better,

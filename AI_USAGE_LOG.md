@@ -166,3 +166,21 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Human approval:** Pending as of this entry.
 
 **Git commit:** See `git log` — Milestone 8 commit follows this entry's own commit.
+
+---
+
+## [2026-08-20] Milestone 9: retention / export
+
+**Prompt intent:** Continue the roadmap (retention/export next), keep committing at each meaningful step, keep tracking against `docs/EVALUATION_CLOSURE_MATRIX.md`.
+
+**AI output:** Retention: soft-delete (`docs/DECISIONS.md` ADR-004, already designed in planning), implemented with one addendum worked out during this milestone -- a record's `status` column is single-valued, but redaction and archival are logically independent facts, so `AuditRecordEntity.archive()` was written to never overwrite an already-`REDACTED` status, with the trade-off (archival eligibility not visible from `status` alone for such a record) stated in `ADR-004` rather than left implicit. Export: went beyond the original unsigned-hash plan and implemented real asymmetric signing (`SHA256withECDSA`, EC P-256) to directly close `docs/EVALUATION_CLOSURE_MATRIX.md` item 15 (`ARC-03`, previously `Open`) -- the previous evaluation specifically flagged the unsigned design as an insufficient trust boundary, so the AI treated this as the moment to fix it rather than replicate the original weaker design.
+
+**Design call made without being asked:** the signing key pair is generated fresh in memory on every application startup rather than loaded from configuration, specifically so no private key material is ever committed to source control or needs a secret-management story this environment doesn't have. This has a real, stated consequence (signatures don't survive an app restart) rather than being presented as free.
+
+**Human decision:** The engineer set the milestone order and process; the AI made the retention-status-interaction call and the ephemeral-signing-key call, documenting rationale and the restart-limitation trade-off in ADR-004/ADR-013 for review. Not yet reviewed line-by-line as of this entry.
+
+**Validation performed:** `mvn test` → `Tests run: 71, Failures: 0, Errors: 0` (BUILD SUCCESS) -- all 12 new tests passed on the first run. Live run: exported a real signed bundle via `curl`; applied retention with `windowDays=-1` and confirmed the expected archived count.
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log` — Milestone 9 commit follows this entry's own commit.

@@ -6,12 +6,12 @@ import com.auditlog.entity.AuditRecordEntity;
 import java.util.ArrayList;
 import java.util.List;
 
-final class AuditRecordMapper {
+public final class AuditRecordMapper {
 
     private AuditRecordMapper() {
     }
 
-    static AuditEventResponse toResponse(AuditRecordEntity entity) {
+    public static AuditEventResponse toResponse(AuditRecordEntity entity) {
         List<String> redactedFields = new ArrayList<>();
         entity.getRedactedFields().forEach(node -> redactedFields.add(node.asText()));
 

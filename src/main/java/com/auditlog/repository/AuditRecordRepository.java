@@ -35,4 +35,18 @@ public interface AuditRecordRepository extends JpaRepository<AuditRecordEntity, 
                                     @Param("to") OffsetDateTime to,
                                     @Param("afterSequenceNo") Long afterSequenceNo,
                                     Pageable pageable);
+
+    @Query("""
+            select a from AuditRecordEntity a
+            where a.tenantId = :tenantId
+              and (:actorId is null or a.actorId = :actorId)
+              and (:resourceId is null or a.resourceId = :resourceId)
+            order by a.sequenceNo asc
+            """)
+    List<AuditRecordEntity> findForExport(@Param("tenantId") String tenantId,
+                                           @Param("actorId") String actorId,
+                                           @Param("resourceId") String resourceId);
+
+    @Query("select a from AuditRecordEntity a where a.status = com.auditlog.domain.AuditRecordStatus.ACTIVE and a.recordedAt < :cutoff")
+    List<AuditRecordEntity> findActiveOlderThan(@Param("cutoff") OffsetDateTime cutoff);
 }

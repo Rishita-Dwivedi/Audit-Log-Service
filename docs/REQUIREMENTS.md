@@ -53,13 +53,15 @@ Expose `GET /audit/verify`, which walks the full chain and reports whether the c
 
 ## Scenario B — Extend Scenario A: Retention and Redaction
 
-### FR-B1 — Retention Policy
+### FR-B1 — Retention Policy — IMPLEMENTED, TESTED (Milestone 9, 2026-08-20)
 Records older than a configurable window are archivable or soft-deletable.
 
 **Acceptance criteria**
-- The retention window is configurable, not hard-coded.
-- Records older than the window can be transitioned to an archived state.
-- `GET /audit/verify` handles archived records correctly and does **not** report a false-positive break for records that were legitimately archived per policy.
+- The retention window is configurable, not hard-coded. — IMPLEMENTED (`audit.retention.window-days`, overridable per-request via `?windowDays=`)
+- Records older than the window can be transitioned to an archived state. — TESTED (`RetentionTest.archivesRecordsOlderThanTheWindow`)
+- `GET /audit/verify` handles archived records correctly and does **not** report a false-positive break for records that were legitimately archived per policy. — TESTED (`RetentionTest.archivalDoesNotFalsePositiveOnVerify`)
+
+Scope note: soft-delete only (`ADR-004`), `AUDITOR`-only, no scheduler (not required by the assignment). See `ADR-004` for the documented interaction with redaction (a redacted record's status is not overwritten by archival).
 
 ### FR-B2 — Structured Redaction — IMPLEMENTED, TESTED (Milestone 8, 2026-08-20)
 Certain fields within a record's `payload` (e.g., account numbers, personal identifiers) must be redactable to satisfy data privacy requirements, without breaking the hash chain.
@@ -72,13 +74,15 @@ Certain fields within a record's `payload` (e.g., account numbers, personal iden
 
 Scope note: only top-level `payload` fields are redactable in this implementation; nested object/array field redaction is out of scope (documented limitation, `ADR-003`). Redaction is tenant-authorized the same way query/fetch are (`ADR-012`) — this also closes `docs/EVALUATION_CLOSURE_MATRIX.md` items 3/21 for the redaction endpoint specifically.
 
-### FR-B3 — Bulk Export
+### FR-B3 — Bulk Export — IMPLEMENTED, TESTED (Milestone 9, 2026-08-20)
 Provide an endpoint to export all records for a given `resourceId` or `actorId` as a self-contained, verifiable bundle, including enough chain metadata for a recipient to independently verify that the records it contains have not been altered since export.
 
 **Acceptance criteria**
-- The export bundle contains, for each record, the fields needed to recompute and check its hash and its linkage to the previous record in the bundle.
-- The bundle includes an integrity mechanism (documented in `ARCHITECTURE.md`) that lets a recipient detect if the bundle itself was altered after export.
-- A recipient with no access to the live database can perform this verification using only the bundle's contents.
+- The export bundle contains, for each record, the fields needed to recompute and check its hash and its linkage to the previous record in the bundle. — IMPLEMENTED (each record includes `recordHash`/`previousHash`; `chainContext.hashOfLastRecordBeforeRange` anchors the first exported record)
+- The bundle includes an integrity mechanism (documented in `ARCHITECTURE.md`) that lets a recipient detect if the bundle itself was altered after export. — IMPLEMENTED, upgraded beyond the original plan: an asymmetric (`SHA256withECDSA`) signature over the manifest, not just an unsigned hash — see `docs/DECISIONS.md` ADR-013, closing `docs/EVALUATION_CLOSURE_MATRIX.md` item 15 (`ARC-03`)
+- A recipient with no access to the live database can perform this verification using only the bundle's contents. — TESTED (`ExportTest.exportBundleSignatureVerifiesIndependently`, reconstructing the manifest from only the bundle's own JSON and verifying with only the published public key)
+
+Also tested: filter validation (`exportRequiresAtLeastOneFilter`), correct scoping (`exportReturnsOnlyMatchingRecords`), tampered-bundle detection (`tamperedBundleFailsSignatureVerification`), and tenant authorization (`exportIsScopedToCallersOwnTenantUnlessAuditor`) — this closes `docs/EVALUATION_CLOSURE_MATRIX.md` items 3/21 for the export endpoint.
 
 ---
 
