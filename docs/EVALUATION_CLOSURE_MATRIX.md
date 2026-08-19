@@ -31,7 +31,7 @@ No application code has been written as part of producing this document. No item
 | # | Previous evaluation ID | Item | Priority | Status |
 |---|---|---|---|---|
 | 1 | ATT-01 | Delivery commit identifiability | P0 | Open — Not Started |
-| 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Open — Not Started |
+| 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Implemented, Tested (91% instruction, 77% branch; thresholds 70%/60% enforced) |
 | 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify/redaction/export/compliance) |
 | 4 | SEC-06 | Replay/idempotency protection | P1 | Implemented, Tested |
 | 5 | SEC-06 | Global request/body limits | P1 | Implemented, Tested (declared Content-Length only -- see ADR-014) |
@@ -42,7 +42,7 @@ No application code has been written as part of producing this document. No item
 | 10 | SEC-09 | Operational monitoring documentation | P1 | Implemented, Tested (health endpoint only) |
 | 11 | TEST-06 | Database fault/rollback tests | P1 | Open — Not Started |
 | 12 | TEST-06 | Multi-instance/concurrent contention testing | P1 | Implemented, Tested (ConcurrentAppendTest, Milestone 4 -- status correction: this was already closed and not previously marked) |
-| 13 | TEST-08 | Reproducible CI/test artifacts & Testcontainers reporting | P1 | Open — Design Pending |
+| 13 | TEST-08 | Reproducible CI/test artifacts & Testcontainers reporting | P1 | Implemented (GitHub Actions workflow added; not yet executed remotely -- repo not pushed. Testcontainers N/A, H2-only per ADR-001) |
 | 14 | ARC-02 | External chain-head anchor | P2 | Open — Design Pending (feasibility to be assessed) |
 | 15 | ARC-03 | Signed export manifests | P2 | Implemented, Tested |
 | 16 | SEC-02 | Invalid/expired/forged/missing authentication tests | Gap | Implemented, Tested |
@@ -53,7 +53,7 @@ No application code has been written as part of producing this document. No item
 | 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify/redaction/export/compliance) |
 | 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Implemented, Tested |
 | 23 | TEST-06 | Fault injection, rollback, idempotency tests (combined) | Gap | Open — Blocked by #4, #11 |
-| 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Open — Blocked by #13 |
+| 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Implemented (CI workflow uploads JaCoCo/Surefire artifacts) |
 | 25 | ARC-02 | External anchor trade-off documentation | Gap | Open — Blocked by #14 |
 | 26 | ARC-03 | Export signature trust model documentation | Gap | Implemented, Tested |
 
