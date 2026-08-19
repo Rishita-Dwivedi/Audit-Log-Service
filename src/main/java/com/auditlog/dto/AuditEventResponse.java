@@ -9,6 +9,7 @@ import java.util.UUID;
 public record AuditEventResponse(
         UUID id,
         long sequenceNo,
+        String tenantId,
         String eventType,
         String actorId,
         String resourceType,

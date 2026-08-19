@@ -27,6 +27,9 @@ public class AuditRecordEntity {
     @Column(name = "sequence_no", nullable = false, updatable = false, unique = true)
     private long sequenceNo;
 
+    @Column(name = "tenant_id", nullable = false, updatable = false, length = 200)
+    private String tenantId;
+
     @Column(name = "event_type", nullable = false, updatable = false, length = 200)
     private String eventType;
 
@@ -60,12 +63,13 @@ public class AuditRecordEntity {
         // JPA
     }
 
-    public AuditRecordEntity(UUID id, long sequenceNo, String eventType, String actorId,
+    public AuditRecordEntity(UUID id, long sequenceNo, String tenantId, String eventType, String actorId,
                               String resourceType, String resourceId, JsonNode payload,
                               OffsetDateTime eventTimestamp, OffsetDateTime recordedAt,
                               String recordHash, String previousHash) {
         this.id = id;
         this.sequenceNo = sequenceNo;
+        this.tenantId = tenantId;
         this.eventType = eventType;
         this.actorId = actorId;
         this.resourceType = resourceType;
@@ -83,6 +87,10 @@ public class AuditRecordEntity {
 
     public long getSequenceNo() {
         return sequenceNo;
+    }
+
+    public String getTenantId() {
+        return tenantId;
     }
 
     public String getEventType() {

@@ -9,8 +9,9 @@ final class AuditRecordMapper {
     }
 
     static AuditEventResponse toResponse(AuditRecordEntity entity) {
-        return new AuditEventResponse(entity.getId(), entity.getSequenceNo(), entity.getEventType(),
-                entity.getActorId(), entity.getResourceType(), entity.getResourceId(), entity.getPayload(),
-                entity.getEventTimestamp(), entity.getRecordedAt(), entity.getRecordHash(), entity.getPreviousHash());
+        return new AuditEventResponse(entity.getId(), entity.getSequenceNo(), entity.getTenantId(),
+                entity.getEventType(), entity.getActorId(), entity.getResourceType(), entity.getResourceId(),
+                entity.getPayload(), entity.getEventTimestamp(), entity.getRecordedAt(), entity.getRecordHash(),
+                entity.getPreviousHash());
     }
 }

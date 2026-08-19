@@ -22,11 +22,11 @@ class TamperDetectionTest extends AbstractApiIntegrationTest {
                 OffsetDateTime.parse("2026-01-01T00:00:00Z"));
         createEvent("USER_LOGIN", "user-1", "ACCOUNT", "acct-1", Map.of(), OffsetDateTime.parse("2026-01-01T00:01:00Z"));
 
-        assertThat(restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class).chainIntact()).isTrue();
+        assertThat(getAsAuditor("/audit/verify", VerifyResponse.class).chainIntact()).isTrue();
 
         jdbcTemplate.update("UPDATE audit_record SET payload = ? WHERE id = ?", "{\"amount\":999999}", first.id());
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
 
         assertThat(verify.chainIntact()).isFalse();
         assertThat(verify.firstViolation().sequenceNo()).isEqualTo(1L);
@@ -41,7 +41,7 @@ class TamperDetectionTest extends AbstractApiIntegrationTest {
 
         jdbcTemplate.update("UPDATE audit_record SET previous_hash = ? WHERE id = ?", "0".repeat(64), second.id());
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
 
         assertThat(verify.chainIntact()).isFalse();
         assertThat(verify.firstViolation().sequenceNo()).isEqualTo(2L);
@@ -57,7 +57,7 @@ class TamperDetectionTest extends AbstractApiIntegrationTest {
 
         jdbcTemplate.update("DELETE FROM audit_record WHERE id = ?", second.id());
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
 
         assertThat(verify.chainIntact()).isFalse();
         assertThat(verify.firstViolation().sequenceNo()).isEqualTo(3L);
@@ -75,7 +75,7 @@ class TamperDetectionTest extends AbstractApiIntegrationTest {
 
         jdbcTemplate.update("DELETE FROM audit_record WHERE id = ?", second.id());
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
 
         assertThat(verify.chainIntact()).isFalse();
         // Both MISSING_RECORD (sequence gap) and LINKAGE_BROKEN (previous_hash no longer matches)

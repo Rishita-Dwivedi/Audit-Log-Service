@@ -45,7 +45,8 @@ class ConcurrentAppendTest extends AbstractApiIntegrationTest {
                             "resourceId", "acct-" + i,
                             "payload", Map.of(),
                             "timestamp", OffsetDateTime.now().toString());
-                    return restTemplate.postForEntity(baseUrl("/audit/events"), request, com.auditlog.dto.AuditEventResponse.class);
+                    return post("/audit/events", DEFAULT_TENANT, new String[]{com.auditlog.security.Roles.USER},
+                            request, com.auditlog.dto.AuditEventResponse.class);
                 })
                 .collect(Collectors.toList());
 
@@ -65,7 +66,7 @@ class ConcurrentAppendTest extends AbstractApiIntegrationTest {
         }
         pool.shutdown();
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
         System.out.println("successCount=" + successCount + " verify=" + verify);
 
         assertThat(successCount).isEqualTo(writerCount);

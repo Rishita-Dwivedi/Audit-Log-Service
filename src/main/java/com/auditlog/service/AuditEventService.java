@@ -7,6 +7,8 @@ import com.auditlog.entity.ChainHeadEntity;
 import com.auditlog.hash.HashChainService;
 import com.auditlog.repository.AuditRecordRepository;
 import com.auditlog.repository.ChainHeadRepository;
+import com.auditlog.security.AuditSecurityContext;
+import com.auditlog.security.AuthenticatedPrincipal;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +41,12 @@ public class AuditEventService {
      */
     @Transactional
     public AuditEventResponse append(AuditEventCreateRequest request) {
+        // tenantId is taken from the authenticated principal, never from the request body --
+        // a caller must not be able to write into another tenant's data by claiming a
+        // different tenantId in the payload (docs/EVALUATION_CLOSURE_MATRIX.md item 3, SEC-03).
+        AuthenticatedPrincipal principal = AuditSecurityContext.current();
+        String tenantId = principal.tenantId();
+
         ChainHeadEntity head = chainHeadRepository.lockHead()
                 .orElseThrow(() -> new IllegalStateException("chain_head row is missing; schema not initialized correctly"));
 
@@ -58,11 +66,11 @@ public class AuditEventService {
         OffsetDateTime eventTimestamp = request.timestamp().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         OffsetDateTime recordedAt = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         String recordHash = hashChainService.computeRecordHash(
-                request.eventType(), request.actorId(), request.resourceType(), request.resourceId(),
+                tenantId, request.eventType(), request.actorId(), request.resourceType(), request.resourceId(),
                 request.payload(), eventTimestamp, nextSequenceNo, previousHash);
 
         AuditRecordEntity entity = new AuditRecordEntity(
-                UUID.randomUUID(), nextSequenceNo, request.eventType(), request.actorId(),
+                UUID.randomUUID(), nextSequenceNo, tenantId, request.eventType(), request.actorId(),
                 request.resourceType(), request.resourceId(), request.payload(),
                 eventTimestamp, recordedAt, recordHash, previousHash);
 

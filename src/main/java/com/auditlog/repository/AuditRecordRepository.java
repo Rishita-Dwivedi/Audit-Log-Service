@@ -16,7 +16,8 @@ public interface AuditRecordRepository extends JpaRepository<AuditRecordEntity, 
 
     @Query("""
             select a from AuditRecordEntity a
-            where (:actorId is null or a.actorId = :actorId)
+            where (:tenantId is null or a.tenantId = :tenantId)
+              and (:actorId is null or a.actorId = :actorId)
               and (:resourceType is null or a.resourceType = :resourceType)
               and (:resourceId is null or a.resourceId = :resourceId)
               and (:eventType is null or a.eventType = :eventType)
@@ -25,7 +26,8 @@ public interface AuditRecordRepository extends JpaRepository<AuditRecordEntity, 
               and (:afterSequenceNo is null or a.sequenceNo > :afterSequenceNo)
             order by a.sequenceNo asc
             """)
-    List<AuditRecordEntity> search(@Param("actorId") String actorId,
+    List<AuditRecordEntity> search(@Param("tenantId") String tenantId,
+                                    @Param("actorId") String actorId,
                                     @Param("resourceType") String resourceType,
                                     @Param("resourceId") String resourceId,
                                     @Param("eventType") String eventType,

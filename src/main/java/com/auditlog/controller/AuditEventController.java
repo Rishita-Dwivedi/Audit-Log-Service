@@ -44,6 +44,7 @@ public class AuditEventController {
 
     @GetMapping
     public ResponseEntity<AuditEventPageResponse> search(
+            @RequestParam(required = false) String tenantId,
             @RequestParam(required = false) String actorId,
             @RequestParam(required = false) String resourceType,
             @RequestParam(required = false) String resourceId,
@@ -54,7 +55,7 @@ public class AuditEventController {
             @RequestParam(required = false) Integer pageSize) {
         OffsetDateTime fromTs = from != null ? OffsetDateTime.parse(from) : null;
         OffsetDateTime toTs = to != null ? OffsetDateTime.parse(to) : null;
-        return ResponseEntity.ok(auditQueryService.search(actorId, resourceType, resourceId, eventType,
+        return ResponseEntity.ok(auditQueryService.search(tenantId, actorId, resourceType, resourceId, eventType,
                 fromTs, toTs, afterSequenceNo, pageSize));
     }
 

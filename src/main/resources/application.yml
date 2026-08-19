@@ -20,3 +20,10 @@ server:
 audit:
   chain:
     genesis-seed: "AUDIT-CHAIN-GENESIS-v1"
+  security:
+    jwt:
+      # Dev-only HMAC secret. Real deployment needs a secret-manager-sourced key or, better,
+      # a real OIDC identity provider -- see docs/SECURITY.md and docs/DECISIONS.md.
+      secret: "dev-only-local-hmac-secret-change-me-before-any-real-deployment-3f8a1c"
+      issuer: "audit-log-service-dev"
+      audience: "audit-log-service-api"

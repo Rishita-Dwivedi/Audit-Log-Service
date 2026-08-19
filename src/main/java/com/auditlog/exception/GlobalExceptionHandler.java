@@ -43,4 +43,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse(OffsetDateTime.now(), HttpStatus.NOT_FOUND.value(), "Not found", List.of(ex.getMessage())));
     }
+
+    @ExceptionHandler(com.auditlog.security.UnauthorizedException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthorized(com.auditlog.security.UnauthorizedException ex) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorResponse(OffsetDateTime.now(), HttpStatus.UNAUTHORIZED.value(), "Unauthorized", List.of(ex.getMessage())));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse(OffsetDateTime.now(), HttpStatus.FORBIDDEN.value(), "Forbidden", List.of(ex.getMessage())));
+    }
 }

@@ -42,7 +42,7 @@ class ChainIntegrityTest extends AbstractApiIntegrationTest {
         createEvent("USER_LOGIN", "user-1", "ACCOUNT", "acct-1", Map.of(), OffsetDateTime.parse("2026-01-01T00:01:00Z"));
         createEvent("USER_LOGIN", "user-1", "ACCOUNT", "acct-1", Map.of(), OffsetDateTime.parse("2026-01-01T00:02:00Z"));
 
-        VerifyResponse verify = restTemplate.getForObject(baseUrl("/audit/verify"), VerifyResponse.class);
+        VerifyResponse verify = getAsAuditor("/audit/verify", VerifyResponse.class);
 
         assertThat(verify.chainIntact()).isTrue();
         assertThat(verify.recordsChecked()).isEqualTo(3L);

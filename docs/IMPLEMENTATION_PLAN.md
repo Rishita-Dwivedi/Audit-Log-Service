@@ -25,10 +25,22 @@ Tracks actual implementation progress, phase by phase, against the plan in `docs
 
 **Not done in this phase (explicitly, not an oversight):** Scenario B (retention/redaction/export), Scenario C (compliance reporting), the external chain-head anchor (`EVALUATION_CLOSURE_MATRIX.md` item 14), the range-verification endpoint (`GET /audit/verify?fromSeq=&toSeq=`), any authentication/authorization enforcement, JaCoCo coverage tooling (item 2), database fault/rollback tests (item 11), and everything else tracked in `docs/EVALUATION_CLOSURE_MATRIX.md` that isn't specifically about append-only enforcement or write-path concurrency.
 
-## Phase 2 and beyond — NOT STARTED
+## Milestone 7 — Security / tenant authorization — COMPLETE (2026-08-20)
 
-To be planned and approved before implementation begins, per the same PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT discipline as Phase 1. Candidate next steps (not yet sequenced or approved):
-- Scenario B: retention/archival, structured redaction (field-commitment scheme), bulk export.
-- Security: resolve the ADR-008 auth-mechanism decision (currently `Proposed`), then implement and test it, then build the tenant/resource-authorization model (`EVALUATION_CLOSURE_MATRIX.md` item 3) on top of it.
-- Scenario C: clarification document first, then scoped design and implementation.
-- Remaining P0/P1 closure-matrix items not touched by Phase 1: JaCoCo coverage (item 2), request/body limits and CORS (items 5-6), secret management and TLS (items 7-8), immutable DB permissions (item 9, contingent on the H2/Postgres decision), database fault/rollback and reproducible CI evidence (items 11, 13).
+**Scope:** JWT authentication (`docs/DECISIONS.md` ADR-008, finalized from `Proposed` to `Accepted`), tenant isolation and role-based authorization (ADR-012), closing `docs/EVALUATION_CLOSURE_MATRIX.md` items 3 (`SEC-03`), 16 (`SEC-02`), and 21 (`TEST-04`) for the endpoints that exist so far (query, fetch, verify — redaction/export/compliance don't exist yet).
+
+**What was built:**
+- `JwtService`, `JwtAuthenticationFilter`, `AuditSecurityContext`, `Roles`, `DevAuthController` (`POST /dev/auth/token` — explicitly **not** a real auth endpoint, see `docs/SECURITY.md`) in `com.auditlog.security`.
+- `V2__add_tenant_id.sql`: `tenant_id` added to `audit_record`, now part of the hashed content (`HashChainService` signature changed to include it).
+- `AuditEventService` derives `tenantId` from the JWT only (never the request body). `AuditQueryService` scopes query/fetch to the caller's tenant unless `ROLE_AUDITOR`. `ChainVerificationService` requires `ROLE_AUDITOR`.
+- 19 new tests: `JwtServiceTest` (6, unit), `SecurityAuthenticationTest` (6, integration — `SEC-02`), `TenantIsolationTest` (7, integration — `SEC-03`/`TEST-04`). Total: 43 tests, all passing.
+
+**Bug found and fixed:** `AuditQueryService.search()`'s pagination cursor used a ternary (`page.isEmpty() ? afterSequenceNo : page.get(...).getSequenceNo()`) mixing `Long` and primitive `long` — Java's numeric-promotion rule auto-unboxes the `Long` branch even when selected, throwing NPE the moment a query legitimately returned zero results with no cursor. Never triggered in Phase 1 because no earlier test produced a genuinely empty result set; `TenantIsolationTest.queryIgnoresAttemptToRequestAnotherTenantAsNonAuditor` was the first. Fixed with an explicit if/else.
+
+**Evidence:** `mvn test` → `Tests run: 43, Failures: 0, Errors: 0` (BUILD SUCCESS). Live run: two tenants via `/dev/auth/token`, cross-tenant query returned empty, `/audit/verify` returned 403 for `ROLE_USER` and 200 (`chainIntact: true`) for `ROLE_AUDITOR`.
+
+**Not done in this milestone:** authorization for redaction/export/compliance endpoints (they don't exist yet — will follow this same pattern in Milestones 8-10); request/body limits, CORS, secret management, TLS, immutable DB permissions, operational monitoring (closure-matrix items 5-10, deferred to the later "Security + negative testing" milestone).
+
+## Remaining milestones — NOT STARTED
+
+Per your roadmap, in order: Redaction/commitments (Milestone 8) → Retention/export (Milestone 9) → Compliance scenario (Milestone 10) → Security + negative testing (Milestone 11) → JaCoCo + CI + final evidence (Milestone 12). Each gets its own PLAN → REVIEW → IMPLEMENT → TEST → REVIEW → DOCUMENT → COMMIT cycle and closure-matrix status update, same as Milestone 7 above.

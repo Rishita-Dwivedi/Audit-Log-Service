@@ -130,3 +130,21 @@ Convention going forward: one entry per meaningful interaction, in chronological
 **Sign-off:** Given directly by the engineer via the explicit choice above.
 
 **Git commit:** See `git log` from this point forward — `9d18f0a` no longer exists as a ref (the objects remain reachable via reflog only, not referenced by any branch).
+
+---
+
+## [2026-08-20] Milestone 7: security / tenant authorization
+
+**Prompt intent:** Implement all remaining roadmap milestones starting with Security/tenant authorization, committing at each meaningful step, and tracking status against `docs/EVALUATION_CLOSURE_MATRIX.md`.
+
+**AI output:** JWT authentication (HS256, custom `OncePerRequestFilter`, not the full Spring Security starter — see `docs/DECISIONS.md` ADR-008 for why) and tenant/role authorization (ADR-012): `tenant_id` added to `audit_record` and to the hash input, derived only from the JWT (never the request body); query/fetch scoped to the caller's tenant unless `ROLE_AUDITOR`; `/audit/verify` gated to `ROLE_AUDITOR`. A `POST /dev/auth/token` endpoint issues tokens with zero identity verification — flagged repeatedly, in code comments and three separate docs, as not a real authentication endpoint, since it's the kind of thing that's easy to forget matters once the demo works. 19 new tests (unit + integration), all existing tests updated to attach auth headers.
+
+**Bug found and fixed:** `AuditQueryService.search()`'s cursor computation used `page.isEmpty() ? afterSequenceNo : page.get(...).getSequenceNo()` — a `Long ? : long` ternary, which Java auto-unboxes even on the selected `Long` branch, throwing NPE the instant a query legitimately returned zero rows with a null cursor. No test before `TenantIsolationTest.queryIgnoresAttemptToRequestAnotherTenantAsNonAuditor` had ever produced a truly empty result set, so this pre-existing (Phase 1) latent bug went undetected until this milestone's new test surfaced it. Fixed with an explicit if/else, which doesn't have the pitfall.
+
+**Human decision:** The engineer set the milestone order and the "commit on every meaningful step" requirement; the AI chose the specific implementation (JWT over API-key, custom filter over Spring Security, tenant-as-hashed-column, 404-not-403 for cross-tenant fetch, verify gated by role rather than tenant-scoped) and documented the reasoning and alternatives in ADR-008/ADR-012 for the engineer to review. Not yet reviewed line-by-line as of this entry.
+
+**Validation performed:** `mvn test` → `Tests run: 43, Failures: 0, Errors: 0` (BUILD SUCCESS). Live run: two tenants issued tokens via `/dev/auth/token`; cross-tenant query returned `{"items":[]}`; `/audit/verify` returned 403 for `ROLE_USER` and 200 (`chainIntact: true`) for `ROLE_AUDITOR`.
+
+**Human approval:** Pending as of this entry.
+
+**Git commit:** See `git log` — Milestone 7 commit follows this entry's own commit.

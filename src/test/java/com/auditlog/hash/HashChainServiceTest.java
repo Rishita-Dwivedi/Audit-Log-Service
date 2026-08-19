@@ -24,8 +24,8 @@ class HashChainServiceTest {
         JsonNode payload = objectMapper.readTree("{\"amount\":100}");
         OffsetDateTime ts = OffsetDateTime.parse("2026-01-01T00:00:00Z");
 
-        String hash1 = hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
-        String hash2 = hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
+        String hash1 = hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
+        String hash2 = hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
 
         assertThat(hash1).isEqualTo(hash2);
     }
@@ -35,13 +35,15 @@ class HashChainServiceTest {
         JsonNode payload = objectMapper.readTree("{\"amount\":100}");
         OffsetDateTime ts = OffsetDateTime.parse("2026-01-01T00:00:00Z");
 
-        String baseline = hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
+        String baseline = hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev");
 
-        assertThat(hashChainService.computeRecordHash("OTHER", "actor", "TYPE", "id-1", payload, ts, 1L, "prev"))
+        assertThat(hashChainService.computeRecordHash("tenant-2", "EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "prev"))
                 .isNotEqualTo(baseline);
-        assertThat(hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payload, ts, 2L, "prev"))
+        assertThat(hashChainService.computeRecordHash("tenant-1", "OTHER", "actor", "TYPE", "id-1", payload, ts, 1L, "prev"))
                 .isNotEqualTo(baseline);
-        assertThat(hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "other-prev"))
+        assertThat(hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payload, ts, 2L, "prev"))
+                .isNotEqualTo(baseline);
+        assertThat(hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payload, ts, 1L, "other-prev"))
                 .isNotEqualTo(baseline);
     }
 
@@ -51,8 +53,8 @@ class HashChainServiceTest {
         JsonNode payloadB = objectMapper.readTree("{\"a\":2,\"b\":1}");
         OffsetDateTime ts = OffsetDateTime.parse("2026-01-01T00:00:00Z");
 
-        String hashA = hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payloadA, ts, 1L, "prev");
-        String hashB = hashChainService.computeRecordHash("EVT", "actor", "TYPE", "id-1", payloadB, ts, 1L, "prev");
+        String hashA = hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payloadA, ts, 1L, "prev");
+        String hashB = hashChainService.computeRecordHash("tenant-1", "EVT", "actor", "TYPE", "id-1", payloadB, ts, 1L, "prev");
 
         assertThat(hashA).isEqualTo(hashB);
     }

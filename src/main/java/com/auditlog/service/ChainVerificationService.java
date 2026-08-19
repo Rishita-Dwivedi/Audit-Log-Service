@@ -4,8 +4,12 @@ import com.auditlog.domain.ViolationType;
 import com.auditlog.dto.VerifyResponse;
 import com.auditlog.dto.ViolationDetail;
 import com.auditlog.entity.AuditRecordEntity;
+import com.auditlog.exception.ForbiddenException;
 import com.auditlog.hash.HashChainService;
 import com.auditlog.repository.AuditRecordRepository;
+import com.auditlog.security.AuditSecurityContext;
+import com.auditlog.security.AuthenticatedPrincipal;
+import com.auditlog.security.Roles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,6 +36,15 @@ public class ChainVerificationService {
 
     @Transactional(readOnly = true)
     public VerifyResponse verify() {
+        // Only AUDITOR may see system-wide chain state (docs/EVALUATION_CLOSURE_MATRIX.md
+        // item 3, SEC-03): the chain is global across all tenants, so this is deliberately not
+        // tenant-scoped -- a tenant-scoped verify would misreport other tenants' records as
+        // "missing" from a tenant's own sub-sequence, which is not a real integrity break.
+        AuthenticatedPrincipal principal = AuditSecurityContext.current();
+        if (!principal.hasRole(Roles.AUDITOR)) {
+            throw new ForbiddenException("GET /audit/verify requires the AUDITOR role");
+        }
+
         List<AuditRecordEntity> records = auditRecordRepository.findAllByOrderBySequenceNoAsc();
         List<ViolationDetail> violations = new ArrayList<>();
 

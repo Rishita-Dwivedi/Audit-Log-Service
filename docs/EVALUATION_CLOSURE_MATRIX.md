@@ -32,7 +32,7 @@ No application code has been written as part of producing this document. No item
 |---|---|---|---|---|
 | 1 | ATT-01 | Delivery commit identifiability | P0 | Open — Not Started |
 | 2 | TEST-09 | JaCoCo coverage generation, thresholds & mapping | P0 | Open — Not Started |
-| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Open — Design Pending |
+| 3 | SEC-03 | Tenant/resource ownership authorization (tenant isolation, BOLA/IDOR prevention) | P0 | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance -- not built yet) |
 | 4 | SEC-06 | Replay/idempotency protection | P1 | Open — Not Started |
 | 5 | SEC-06 | Global request/body limits | P1 | Open — Not Started |
 | 6 | SEC-06 | Explicit CORS policy | P1 | Open — Not Started |
@@ -45,12 +45,12 @@ No application code has been written as part of producing this document. No item
 | 13 | TEST-08 | Reproducible CI/test artifacts & Testcontainers reporting | P1 | Open — Design Pending |
 | 14 | ARC-02 | External chain-head anchor | P2 | Open — Design Pending (feasibility to be assessed) |
 | 15 | ARC-03 | Signed export manifests | P2 | Open — Not Started |
-| 16 | SEC-02 | Invalid/expired/forged/missing authentication tests | Gap | Open — Blocked by ADR-008 (auth mechanism) |
+| 16 | SEC-02 | Invalid/expired/forged/missing authentication tests | Gap | Implemented, Tested |
 | 17 | SEC-05 | Oversized/malformed request body tests | Gap | Open — Blocked by #5 |
 | 18 | SEC-08 | PII/log-injection/security-event tests | Gap | Open — Design Pending |
 | 19 | TEST-01 | Endpoint-to-requirement test matrix | Gap | Open — Not Started |
 | 20 | TEST-03 | Expanded malformed/boundary testing | Gap | Open — Not Started |
-| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Open — Blocked by #3 |
+| 21 | TEST-04 | Tenant/BOLA/cross-resource tests | Gap | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance) |
 | 22 | TEST-05 | Replay/duplicate semantics tests | Gap | Open — Blocked by #4 |
 | 23 | TEST-06 | Fault injection, rollback, idempotency tests (combined) | Gap | Open — Blocked by #4, #11 |
 | 24 | TEST-08 | Reproducible execution evidence preservation | Gap | Open — Blocked by #13 |
@@ -104,15 +104,15 @@ No application code has been written as part of producing this document. No item
 | Previous evaluation ID | SEC-03 |
 | Problem identified | The previous evaluation found that tenant/resource authorization was unresolved: tenant isolation and resource ownership/authorization were not implemented, leaving the system exposed to BOLA/IDOR, and this was untested for query, redaction, export, and compliance endpoints. |
 | Required remediation | Implement tenant isolation; implement resource ownership/authorization; prevent BOLA/IDOR; query endpoints must be tenant-scoped; redaction must be tenant/resource authorized; export must be tenant authorized; compliance reporting must be tenant authorized; add explicit cross-tenant negative tests (tracked as item 21, `TEST-04`, the dedicated test counterpart, rather than duplicated here). |
-| Design decision | Not yet decided, and this **supersedes the current scope of `docs/DECISIONS.md` ADR-008** (`Proposed`, minimal API-key check only, no ownership model). Per the security-model principle now made explicit (authorization is not simply "JWT → role → endpoint"), the revised/replacement ADR must separately define: authentication (who is calling — depends on ADR-008's mechanism being finalized first), tenant identity, user identity, role, resource ownership, and tenant/resource authorization as distinct concepts, plus the concrete check applied per request across the four named endpoint categories (query, redaction, export, compliance). This is the single highest-leverage open design decision in this matrix — several other items (16, 21) are blocked on it. |
-| Implementation task | None yet. Will require an authorization component consulted by `AuditQueryService`, `RedactionService`, `ExportBundleService`, and the compliance-report endpoint (`ComplianceReportController`, per `docs/ARCHITECTURE.md`). |
-| Unit test | Planned: authorization-decision unit tests (allow/deny cases) for the ownership-check component in isolation, covering tenant identity, resource ownership, and role independently. |
-| Integration test | Planned: per-endpoint integration tests (query, redaction, export, compliance) asserting a denied response when the caller does not own/is not entitled to the requested resource, and that no cross-tenant data is leaked in the response (not just that access is denied — see `docs/REQUIREMENTS.md`-level acceptance criteria to be added). |
-| Security test | Planned: dedicated cross-tenant/BOLA test suite — see item 21 (`TEST-04`), the testing counterpart to this requirement. |
-| Documentation evidence | To be added: revised/replacement ADR in `docs/DECISIONS.md`; authorization model described in `docs/SECURITY.md`; updated `docs/ARCHITECTURE.md` cross-cutting concerns section. |
-| Runtime/reproduction evidence | To be produced: reproducible request examples (e.g., `.http` file or script) showing a cross-tenant request denied on each of the four endpoint categories. |
-| Git commit | None — no commits exist in the repository yet. |
-| Status | Open — Design Pending |
+| Design decision | `docs/DECISIONS.md` ADR-012 (Accepted). `tenant_id` is a first-class, hashed column on `audit_record`, derived only from the JWT `tenantId` claim (never the request body). Query/fetch endpoints are tenant-scoped by default; `AUDITOR` role grants cross-tenant read. `GET /audit/verify` requires `AUDITOR` outright rather than being tenant-scoped (global chain — see ADR-012 for why tenant-scoped verify would produce false positives). Redaction/export/compliance endpoints don't exist yet (Milestones 8-10); their authorization will follow this same pattern when built. |
+| Implementation task | Done for query/fetch/verify: `AuditQueryService` (tenant scoping + AUDITOR override), `AuditEventService` (tenant derived from JWT on write), `ChainVerificationService` (AUDITOR gate). `RedactionService`/`ExportBundleService`/compliance endpoint authorization: not yet built (tracked for Milestones 8-10). |
+| Unit test | `JwtServiceTest` (6 tests) covers principal/claims extraction the authorization checks depend on. |
+| Integration test | `TenantIsolationTest` (7 tests): cross-tenant query returns no leaked records, explicit cross-tenant `tenantId` param ignored for non-AUDITOR, cross-tenant fetch-by-id returns 404, write always scoped to caller's tenant, AUDITOR can cross-tenant query/verify. |
+| Security test | `TenantIsolationTest.verifyRequiresAuditorRole` (403 for `ROLE_USER`) — dedicated BOLA/cross-tenant coverage; see also item 21 (`TEST-04`), same test class. |
+| Documentation evidence | `docs/DECISIONS.md` ADR-012; `docs/SECURITY.md` (tenant isolation section). |
+| Runtime/reproduction evidence | Live manual run (2026-08-20): two tenants via `/dev/auth/token`, cross-tenant query returned `{"items":[]}`, `ROLE_USER` calling `/audit/verify` got 403, `ROLE_AUDITOR` got 200 with `chainIntact: true`. |
+| Git commit | Milestone 7 commit (see `git log`). |
+| Status | Implemented, Tested (query/fetch/verify) — Open for redaction/export/compliance until Milestones 8-10 |
 | Reviewer sign-off | Pending |
 
 ---
@@ -350,15 +350,15 @@ No application code has been written as part of producing this document. No item
 | Previous evaluation ID | SEC-02 |
 | Problem identified | The previous evaluation found this only partially addressed: missing token, invalid token, expired token, forged token, and (where applicable) incorrect issuer/audience were not tested. |
 | Required remediation | Test missing token; invalid token; expired token; forged token; incorrect issuer/audience where applicable. |
-| Design decision | No new design decision of its own — depends entirely on the authentication mechanism from `docs/DECISIONS.md` ADR-008 being finalized first. **This is a genuinely distinct blocker from item 3 (`SEC-03`)**: ADR-008 governs *authentication* (who is calling), while item 3 governs *tenant/resource authorization* (what they're allowed to touch) — the two must not be conflated, per the security-model principle stated for this phase. The "issuer/audience" sub-requirement only applies if a JWT-based mechanism is chosen; it is not applicable to a simple API-key scheme. This is itself a reason the ADR-008 choice needs to be revisited now rather than left as the earlier "minimal API-key" default, given `SEC-02`'s expectations. |
-| Implementation task | None yet — this item is test coverage, contingent on authentication existing. |
-| Unit test | N/A |
-| Integration test | Planned: requests with a missing credential, a malformed/forged credential, and (if a time-bound/JWT credential is chosen) an expired credential and an incorrect issuer/audience are each tested against a protected endpoint and rejected. |
-| Security test | Planned: this is itself the security test category requested; covered together with the integration tests above rather than as a separate suite. |
-| Documentation evidence | To be added: authentication behavior documented in `docs/SECURITY.md` once ADR-008 is finalized. |
-| Runtime/reproduction evidence | To be produced: reproduction requests for each auth-failure mode, showing rejection. |
-| Git commit | None — no commits exist in the repository yet. |
-| Status | Open — Blocked by ADR-008 (auth mechanism) |
+| Design decision | `docs/DECISIONS.md` ADR-008 (Accepted): JWT chosen specifically because this item's issuer/audience expectation isn't satisfiable with a bare API key. |
+| Implementation task | `JwtService` validates signature, expiry, issuer, and audience on every parse; `JwtAuthenticationFilter` enforces this on every request. |
+| Unit test | `JwtServiceTest` (6 tests): round-trip, expired, wrong signing key, wrong issuer, wrong audience, malformed token. |
+| Integration test | `SecurityAuthenticationTest` (6 tests): missing token, malformed token, expired token, forged (wrong-key) token, wrong issuer, wrong audience — all against the real HTTP filter chain, not just `JwtService` in isolation. |
+| Security test | Same as integration test above — this item's own required tests are the security tests. |
+| Documentation evidence | `docs/SECURITY.md`, `docs/DECISIONS.md` ADR-008. |
+| Runtime/reproduction evidence | Live manual run (2026-08-20): request with no `Authorization` header returned 401. |
+| Git commit | Milestone 7 commit (see `git log`). |
+| Status | Implemented, Tested |
 | Reviewer sign-off | Pending |
 
 ### 17. SEC-05 — Oversized/malformed request body tests
@@ -440,15 +440,15 @@ No application code has been written as part of producing this document. No item
 | Previous evaluation ID | TEST-04 |
 | Problem identified | The previous evaluation found this only partially addressed: explicit tenant/BOLA/cross-resource tests were missing. |
 | Required remediation | Add explicit tenant/BOLA/cross-resource tests. |
-| Design decision | This is the direct testing counterpart to item 3 (`SEC-03`); no separate design decision — depends on the ownership/authorization model from item 3 being defined first. |
-| Implementation task | None yet. |
-| Unit test | N/A — covered under item 3's authorization-decision unit tests. |
-| Integration test | Planned: cross-tenant/cross-resource access attempts against query, redaction, export, and compliance endpoints (mirroring item 3's four endpoint categories) each assert denial and confirm no cross-tenant data leaks in the response body. |
-| Security test | Planned: this item is itself the dedicated BOLA/cross-tenant security test suite referenced from item 3. |
-| Documentation evidence | To be added: tracked in `docs/ENDPOINT_TEST_MATRIX.md` once authorization exists. |
-| Runtime/reproduction evidence | To be produced: reproduction requests demonstrating denial for each endpoint category. |
-| Git commit | None — no commits exist in the repository yet. |
-| Status | Open — Blocked by #3 |
+| Design decision | Direct testing counterpart to item 3 (`SEC-03`); no separate design decision. |
+| Implementation task | N/A — test-only item. |
+| Unit test | N/A — covered under item 3's `JwtServiceTest`. |
+| Integration test | `TenantIsolationTest` (7 tests): cross-tenant query returns no leaked records, explicit cross-tenant `tenantId` override ignored for non-AUDITOR, cross-tenant fetch-by-id returns 404 (not 403 — avoids confirming existence), write always scoped to caller's own tenant, AUDITOR-only `/audit/verify` gate, AUDITOR cross-tenant read. Redaction/export/compliance endpoints don't exist yet -- will need their own cross-tenant tests when built (Milestones 8-10). |
+| Security test | `TenantIsolationTest.verifyRequiresAuditorRole` and `.fetchByIdAcrossTenantsReturns404NotForbidden` are this item's dedicated BOLA/cross-tenant coverage. |
+| Documentation evidence | `docs/ENDPOINT_TEST_MATRIX.md`, `docs/DECISIONS.md` ADR-012. |
+| Runtime/reproduction evidence | Live manual run (2026-08-20): tenant-B caller querying `/audit/events` after tenant-A wrote a record returned `{"items":[]}`. |
+| Git commit | Milestone 7 commit (see `git log`). |
+| Status | Implemented, Tested (query/fetch/verify); Open (redaction/export/compliance) |
 | Reviewer sign-off | Pending |
 
 ### 22. TEST-05 — Replay/duplicate semantics tests

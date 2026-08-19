@@ -30,11 +30,12 @@ public class HashChainService {
         return sha256Hex(GENESIS_SEED);
     }
 
-    public String computeRecordHash(String eventType, String actorId, String resourceType, String resourceId,
-                                     JsonNode payload, OffsetDateTime eventTimestamp, long sequenceNo,
-                                     String previousHash) {
+    public String computeRecordHash(String tenantId, String eventType, String actorId, String resourceType,
+                                     String resourceId, JsonNode payload, OffsetDateTime eventTimestamp,
+                                     long sequenceNo, String previousHash) {
         String canonicalPayload = payloadCanonicalizer.canonicalize(payload);
         String canonicalString = String.join("|",
+                nullToEmpty(tenantId),
                 nullToEmpty(eventType),
                 nullToEmpty(actorId),
                 nullToEmpty(resourceType),
@@ -47,8 +48,8 @@ public class HashChainService {
     }
 
     public String computeRecordHash(AuditRecordEntity record) {
-        return computeRecordHash(record.getEventType(), record.getActorId(), record.getResourceType(),
-                record.getResourceId(), record.getPayload(), record.getEventTimestamp(),
+        return computeRecordHash(record.getTenantId(), record.getEventType(), record.getActorId(),
+                record.getResourceType(), record.getResourceId(), record.getPayload(), record.getEventTimestamp(),
                 record.getSequenceNo(), record.getPreviousHash());
     }
 

@@ -17,3 +17,8 @@ spring:
 audit:
   chain:
     genesis-seed: "AUDIT-CHAIN-GENESIS-v1"
+  security:
+    jwt:
+      secret: "test-only-hmac-secret-not-for-any-real-use-9b2e7d"
+      issuer: "audit-log-service-dev"
+      audience: "audit-log-service-api"
