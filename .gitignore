@@ -1,0 +1,11 @@
+target/
+data/
+
+# Confidential assignment material -- see docs/DECISIONS.md ADR-007. Kept locally, not committed.
+Interview_Assignment_Audit_Log_Service.pdf
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
